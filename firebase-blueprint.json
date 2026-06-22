@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "AffiliateLink": {
+      "title": "Affiliate Link",
+      "description": "An affiliate or referral link to be managed and listed.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The UID of the owner who created this link" },
+        "title": { "type": "string", "description": "The name or title of the referral program" },
+        "originalUrl": { "type": "string", "description": "The destination affiliate link" },
+        "description": { "type": "string", "description": "Short description of what the link is about" },
+        "category": { "type": "string", "description": "Category e.g. Tech, SaaS, Shopping, Travel, Finance" },
+        "discountCode": { "type": "string", "description": "Optional promo code or coupon code for users" },
+        "rewardText": { "type": "string", "description": "Describe what reward the clicking guest gets, e.g. 10% discount" },
+        "ownerRewardText": { "type": "string", "description": "Describe what you receive, e.g. 15% recurring commission" },
+        "clicks": { "type": "number", "description": "Count of clicks accumulated" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "slug": { "type": "string", "description": "Custom neat ending for the tracking link" },
+        "isArchived": { "type": "boolean" }
+      },
+      "required": ["userId", "title", "originalUrl", "clicks", "createdAt"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Profile information of the link directory owner.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "description": "Primary email of the owner" },
+        "displayName": { "type": "string", "description": "Name or brand to display at the top of the directory" },
+        "bio": { "type": "string", "description": "Short bio or tagline to introduce their links" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "displayName", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Information about directory owners."
+    },
+    "/affiliateLinks/{linkId}": {
+      "schema": "AffiliateLink",
+      "description": "Collection of public affiliate and referral links."
+    }
+  }
+}
