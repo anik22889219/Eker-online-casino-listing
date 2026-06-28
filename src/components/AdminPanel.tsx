@@ -1,41 +1,55 @@
 import React, { useState, useEffect } from "react";
 import { auth, db } from "../firebase";
+import { collection, onSnapshot } from "firebase/firestore";
 import {
   signInAnonymously,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
   User,
+  GoogleAuthProvider,
+  signInWithPopup,
 } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
 import {
   KeyRound,
   LogOut,
   UserCheck,
   PlusCircle,
-  FileSpreadsheet,
-  Globe,
-  Loader2,
-  CheckCircle,
   TrendingUp,
   Sliders,
   UserCog,
   ChevronRight,
   Info,
   Sparkles,
+  Loader2,
+  CheckCircle,
+  Settings as SettingsIcon,
+  Users as UsersIcon,
 } from "lucide-react";
 import { AffiliateLink, UserProfile } from "../types";
 import AnalyticsSection from "./AnalyticsSection";
 import DealsGrid from "./DealsGrid";
 
+// Import new modular foundation components
+import { AdminSidebar } from "./admin/AdminSidebar";
+import { AdminHeader } from "./admin/AdminHeader";
+import { DashboardStats } from "./admin/DashboardStats";
+import { Settings as AdminSettings } from "./admin/Settings";
+import { UserManager as AdminUserManager } from "./admin/UserManager";
+import { CasinoManager } from "./admin/CasinoManager";
+import { SellRequestsManager } from "./admin/SellRequestsManager";
+import { BonusManager } from "./admin/BonusManager";
+import { ModerationManager } from "./admin/ModerationManager";
+import { CasinoAnalytics } from "./admin/CasinoAnalytics";
+
 interface AdminPanelProps {
   deals: AffiliateLink[];
-  onAddDeal: (dealData: Omit<AffiliateLink, "id" | "userId" | "clicks" | "createdAt" | "isArchived">) => Promise<void>;
-  onUpdateDeal: (dealId: string, updatedFields: Partial<AffiliateLink>) => Promise<void>;
+  onAddDeal: (dealData: any) => Promise<void>;
+  onUpdateDeal: (dealId: string, updatedFields: any) => Promise<void>;
   onDeleteDeal: (dealId: string) => Promise<void>;
   currentUser: User | null;
   userProfile: UserProfile | null;
-  onUpdateProfile: (profile: Partial<UserProfile>) => Promise<void>;
+  onUpdateProfile: (profile: any) => Promise<void>;
 }
 
 export default function AdminPanel({
@@ -47,8 +61,49 @@ export default function AdminPanel({
   userProfile,
   onUpdateProfile,
 }: AdminPanelProps) {
-  // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"links" | "analytics" | "profile">("links");
+  // Navigation tabs: overview, casinos, sell-requests, links, analytics, profile, settings, users
+  const [activeTab, setActiveTab] = useState<string>("overview");
+
+  // Real-time directory statistics state
+  const [stats, setStats] = useState({
+    total: 0,
+    published: 0,
+    drafts: 0,
+    aiGenerated: 0,
+    pendingReview: 0,
+    sellRequests: 0,
+    users: 0,
+  });
+
+  useEffect(() => {
+    // Exclude soft-deleted records from stats
+    const unsubCasinos = onSnapshot(collection(db, "casinos"), (snap) => {
+      const docs = snap.docs.map((d) => d.data());
+      const activeDocs = docs.filter((d: any) => !d.isDeleted);
+      setStats((prev) => ({
+        ...prev,
+        total: activeDocs.length,
+        published: activeDocs.filter((d: any) => d.status === "published").length,
+        drafts: activeDocs.filter((d: any) => d.status === "draft").length,
+        aiGenerated: activeDocs.filter((d: any) => d.aiGenerated || d.status === "ai_generated").length,
+        pendingReview: activeDocs.filter((d: any) => d.status === "pending_review").length,
+      }));
+    });
+
+    const unsubSell = onSnapshot(collection(db, "sellRequests"), (snap) => {
+      setStats((prev) => ({ ...prev, sellRequests: snap.size }));
+    });
+
+    const unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
+      setStats((prev) => ({ ...prev, users: snap.size }));
+    });
+
+    return () => {
+      unsubCasinos();
+      unsubSell();
+      unsubUsers();
+    };
+  }, []);
 
   // Auth form state
   const [authEmail, setAuthEmail] = useState("");
@@ -56,6 +111,7 @@ export default function AdminPanel({
   const [isRegistering, setIsRegistering] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+  const [unauthorizedDomain, setUnauthorizedDomain] = useState<string | null>(null);
 
   // Link Form state
   const [editingDeal, setEditingDeal] = useState<AffiliateLink | null>(null);
@@ -89,6 +145,29 @@ export default function AdminPanel({
   }, [userProfile]);
 
   // Auth Operations
+  const handleGoogleSignIn = async () => {
+    setAuthLoading(true);
+    setAuthError("");
+    setUnauthorizedDomain(null);
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      await signInWithPopup(auth, provider);
+    } catch (err: any) {
+      console.error("Google login failed:", err);
+      let msg = err?.message || "Failed to authenticate with Google";
+      if (err?.code === "auth/popup-closed-by-user") {
+        msg = "The sign-in popup was closed. Please try again.";
+      } else if (err?.code === "auth/unauthorized-domain" || String(err).includes("unauthorized-domain")) {
+        setUnauthorizedDomain(window.location.hostname);
+        msg = "This web domain is not yet authorized in your Firebase authentication console.";
+      }
+      setAuthError(msg);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   const handleAnonymousQuickstart = async () => {
     setAuthLoading(true);
     setAuthError("");
@@ -104,7 +183,6 @@ export default function AdminPanel({
   const handleAutofillAdmin = () => {
     setAuthEmail("admin@refdirect.com");
     setAuthPassword("admin123");
-    // Auto toggle registering since it's most likely a new DB
     setIsRegistering(true);
   };
 
@@ -152,7 +230,6 @@ export default function AdminPanel({
       return;
     }
 
-    // Format URL
     let targetUrl = formData.originalUrl;
     if (!/^https?:\/\//i.test(targetUrl)) {
       targetUrl = "https://" + targetUrl;
@@ -186,7 +263,6 @@ export default function AdminPanel({
         setFormSuccess(`Successfully created referral link for "${formData.title}"!`);
       }
 
-      // Reset form
       setFormData({
         title: "",
         originalUrl: "",
@@ -225,7 +301,6 @@ export default function AdminPanel({
     }
   };
 
-  // Populating editor fields
   const handleEditInit = (deal: AffiliateLink) => {
     setEditingDeal(deal);
     const standardCategories = ["SaaS", "Shopping", "Finance", "Tech", "Hosting", "Travel"];
@@ -242,11 +317,9 @@ export default function AdminPanel({
       ownerRewardText: deal.ownerRewardText || "",
       slug: deal.slug || "",
     });
-    // Scroll to top of form area
     document.getElementById("link-form-container")?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // Cancel edit mode
   const handleCancelEdit = () => {
     setEditingDeal(null);
     setFormData({
@@ -265,489 +338,677 @@ export default function AdminPanel({
   // GUEST LOGIN SCREEN
   if (!currentUser) {
     return (
-      <div className="max-w-md mx-auto my-10 rounded-3xl border border-slate-100 bg-white p-6 shadow-xl relative overflow-hidden">
-        {/* Visual background badge */}
+      <div className="max-w-md mx-auto my-10 rounded-3xl border border-slate-100 bg-white p-6 sm:p-8 shadow-xl relative overflow-hidden">
         <div className="absolute right-0 top-0 -mr-8 -mt-8 h-24 w-24 rounded-full bg-emerald-50/50" />
 
         <div className="text-center mb-6">
-          <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 mb-3">
+          <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 mb-3 shadow-xs">
             <KeyRound className="h-6 w-6" />
           </div>
-          <h2 className="font-display font-bold text-xl text-slate-800">
-            Owner Security Gate
+          <h2 className="font-display font-extrabold text-2xl text-slate-900 tracking-tight">
+            Creator Security Gate
           </h2>
-          <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
+          <p className="text-xs text-slate-500 mt-1.5 max-w-xs mx-auto leading-relaxed">
             Build your personal directory page, customize referral commission headers, and view detailed click graphs!
           </p>
         </div>
 
         {authError && (
-          <div className="rounded-xl bg-red-50 border border-red-100 p-3 mb-4 text-xs text-red-600 leading-normal">
-            {authError}
+          <div className="rounded-2xl bg-red-50/75 border border-red-100 p-4 mb-5 text-xs text-red-800 leading-normal space-y-3 shadow-xs">
+            <div className="flex items-start gap-2.5">
+              <span className="h-5 w-5 rounded-full bg-red-100 text-red-700 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">!</span>
+              <div>
+                <p className="font-bold text-red-950">Sign-in Security Notice</p>
+                <p className="mt-0.5 text-slate-600">{authError}</p>
+              </div>
+            </div>
+
+            {unauthorizedDomain && (
+              <div className="pt-2.5 border-t border-red-200/50 space-y-2.5 text-slate-700">
+                <p className="font-semibold text-slate-950 text-[11px] uppercase tracking-wider">How to resolve this:</p>
+                <ol className="list-decimal list-inside space-y-1.5 pl-0.5 leading-relaxed text-slate-600">
+                  <li>Go to your <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="text-emerald-700 font-bold underline hover:text-emerald-800">Firebase Console</a></li>
+                  <li>Go to <strong>Authentication</strong> &rarr; <strong>Settings</strong> tab</li>
+                  <li>Scroll to <strong>Authorized domains</strong> list</li>
+                  <li>Click <strong>Add domain</strong> and insert this exact address:</li>
+                </ol>
+                <div className="flex items-center gap-2 bg-white/90 p-2 rounded-lg border border-red-200 font-mono text-[10px] text-indigo-800 select-all font-semibold">
+                  <span className="flex-1 truncate">{unauthorizedDomain}</span>
+                  <button 
+                    onClick={() => navigator.clipboard.writeText(unauthorizedDomain)}
+                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md text-[9px] uppercase font-bold tracking-wider text-slate-600 cursor-pointer active:scale-95 transition-all"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Dynamic choice buttons */}
         <div className="space-y-4">
           <button
-            id="quickstart-anonymous-btn"
-            onClick={handleAnonymousQuickstart}
+            id="google-signin-btn"
+            onClick={handleGoogleSignIn}
             disabled={authLoading}
-            className="w-full h-12 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
+            className="w-full h-12 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center justify-center gap-2.5 border border-slate-200 shadow-xs transition-all cursor-pointer"
           >
             {authLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-4.5 w-4.5 animate-spin" />
             ) : (
               <>
-                <span>Instant Sandbox Quickstart</span>
-                <ChevronRight className="h-4 w-4" />
+                <svg className="h-4.5 w-4.5 shrink-0" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.85z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.85c.87-2.6 3.3-4.53 6.16-4.53z"
+                  />
+                </svg>
+                <span>Continue with Google</span>
               </>
             )}
           </button>
 
-          {/* Admin Helper Guide Card */}
-          <div className="rounded-2xl bg-amber-50/60 border border-amber-150 p-4 space-y-2 mt-2">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
-              <Sparkles className="h-4 w-4 text-amber-600 shrink-0 animate-pulse" />
-              <span>Admin Credentials Guide</span>
-            </div>
-            <p className="text-[11px] text-amber-700 leading-normal">
-              Register your admin account on your new custom Firebase database! Click <strong className="font-bold text-amber-800">Auto-fill</strong>, keep <strong className="font-bold text-amber-800">Register Credentials</strong> toggled, then click <strong className="font-bold text-amber-800">Create Owner Space</strong>.
-            </p>
-            <div className="p-3 rounded-lg bg-white/95 border border-amber-100/50 font-mono text-[10px] text-slate-700 space-y-1 relative shadow-xs">
-              <div><span className="font-semibold text-slate-400">EMAIL:</span> admin@refdirect.com</div>
-              <div><span className="font-semibold text-slate-400">PASSWORD:</span> admin123</div>
+          <details className="group border border-slate-150 rounded-2xl bg-slate-50/50 p-1 transition-all">
+            <summary className="list-none flex items-center justify-between p-3.5 text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer select-none">
+              <span>Alternative developer methods</span>
+              <span className="transition-transform duration-200 group-open:rotate-180 text-slate-400">
+                ▼
+              </span>
+            </summary>
+
+            <div className="p-3 border-t border-slate-100 space-y-4 bg-white rounded-xl mt-1">
               <button
-                type="button"
-                onClick={handleAutofillAdmin}
-                className="absolute right-2 top-2 px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[9px] font-extrabold rounded-md cursor-pointer transition-all uppercase"
-              >
-                Auto-fill
-              </button>
-            </div>
-          </div>
-
-          <div className="relative py-2 text-center text-[10px] uppercase font-bold tracking-wider text-slate-400">
-            <span className="bg-white px-3 relative z-10">Or custom cloud credentials</span>
-            <hr className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-slate-100 z-0" />
-          </div>
-
-          <form onSubmit={handleEmailAuth} className="space-y-3">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                Owner Email address
-              </label>
-              <input
-                id="email-field"
-                type="email"
-                placeholder="you@domain.com"
-                value={authEmail}
-                onChange={(e) => setAuthEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/50"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                Personal master passcode
-              </label>
-              <input
-                id="password-field"
-                type="password"
-                placeholder="Secret key"
-                value={authPassword}
-                onChange={(e) => setAuthPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/50"
-              />
-            </div>
-
-            <div className="flex items-center justify-between pt-1">
-              <button
-                id="toggle-auth-mode-btn"
-                type="button"
-                onClick={() => setIsRegistering(!isRegistering)}
-                className="text-[11px] font-bold text-slate-500 hover:text-slate-800 underline"
-              >
-                {isRegistering ? "Back to Login" : "Register Credentials"}
-              </button>
-              <button
-                id="submit-auth-btn"
-                type="submit"
+                id="quickstart-anonymous-btn"
+                onClick={handleAnonymousQuickstart}
                 disabled={authLoading}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs shadow-xs transition-all cursor-pointer"
+                className="w-full h-11 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
               >
                 {authLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
-                ) : isRegistering ? (
-                  "Create Owner Space"
                 ) : (
-                  "Sign In"
+                  <>
+                    <span>Instant Sandbox Quickstart</span>
+                    <ChevronRight className="h-4 w-4" />
+                  </>
                 )}
               </button>
-            </div>
-          </form>
-        </div>
 
-        <div className="mt-6 pt-4 border-t border-slate-50 flex items-start gap-2 text-[10px] text-slate-400 leading-normal">
-          <Info className="h-4 w-4 text-slate-300 shrink-0 mt-0.5" />
-          <span>
-            Selecting Quickstart configures a client-side anonymous session with Firebase instantly without exposing key fields publicly.
-          </span>
+              <div className="rounded-2xl bg-amber-50/60 border border-amber-150 p-4 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                  <Sparkles className="h-4 w-4 text-amber-600 shrink-0 animate-pulse" />
+                  <span>Admin Credentials Guide</span>
+                </div>
+                <p className="text-[11px] text-amber-700 leading-normal">
+                  Register your admin account on your new custom Firebase database! Click <strong className="font-bold text-amber-800">Auto-fill</strong>, keep <strong className="font-bold text-amber-800">Register Credentials</strong> toggled, then click <strong className="font-bold text-amber-800">Create Owner Space</strong>.
+                </p>
+                <div className="p-3 rounded-lg bg-white/95 border border-amber-100/50 font-mono text-[10px] text-slate-700 space-y-1 relative shadow-xs">
+                  <div><span className="font-semibold text-slate-400">EMAIL:</span> admin@refdirect.com</div>
+                  <div><span className="font-semibold text-slate-400">PASSWORD:</span> admin123</div>
+                  <button
+                    type="button"
+                    onClick={handleAutofillAdmin}
+                    className="absolute right-2 top-2 px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[9px] font-extrabold rounded-md cursor-pointer transition-all uppercase"
+                  >
+                    Auto-fill
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative py-2 text-center text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                <span className="bg-white px-3 relative z-10">Or custom cloud credentials</span>
+                <hr className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-slate-100 z-0" />
+              </div>
+
+              <form onSubmit={handleEmailAuth} className="space-y-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Owner Email address
+                  </label>
+                  <input
+                    id="email-field"
+                    type="email"
+                    placeholder="you@domain.com"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Personal master passcode
+                  </label>
+                  <input
+                    id="password-field"
+                    type="password"
+                    placeholder="Secret key"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/50"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    id="toggle-auth-mode-btn"
+                    type="button"
+                    onClick={() => setIsRegistering(!isRegistering)}
+                    className="text-[11px] font-bold text-slate-500 hover:text-slate-800 underline"
+                  >
+                    {isRegistering ? "Back to Login" : "Register Credentials"}
+                  </button>
+                  <button
+                    id="submit-auth-btn"
+                    type="submit"
+                    disabled={authLoading}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs shadow-xs transition-all cursor-pointer"
+                  >
+                    {authLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : isRegistering ? (
+                      "Create Owner Space"
+                    ) : (
+                      "Sign In"
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </details>
         </div>
       </div>
     );
   }
 
-  // ACTIVE OWNER CONTROL PANEL
+  // Active metrics calculation
+  const totalClicks = deals.reduce((sum, item) => sum + (item.clicks || 0), 0);
+  const totalConversions = deals.reduce((sum, item) => sum + (item.conversions || 0), 0);
+  const activeLinks = deals.filter(item => item.status === 'active' || !item.isArchived).length;
+
+  const getHeaderTitle = () => {
+    switch (activeTab) {
+      case 'overview': return 'Command Center Dashboard';
+      case 'casinos': return 'Casino Listings Asset Manager';
+      case 'bonuses': return 'Promo Campaign & Bonuses Manager';
+      case 'moderation': return 'Vetting Desk & Moderation';
+      case 'casino-analytics': return 'Casino Conversion Analytics';
+      case 'sell-requests': return 'Affiliate Sell Requests';
+      case 'links': return 'Affiliate Offers';
+      case 'analytics': return 'Performance & Analytics';
+      case 'profile': return 'Header & Branding Bio';
+      case 'settings': return 'System Settings';
+      case 'users': return 'System Users';
+      default: return 'Administrator Space';
+    }
+  };
+
+  // FULL COMPREHENSIVE FOUNDATION LAYOUT (Task 11)
   return (
-    <div className="space-y-6">
-      {/* Top Banner Row */}
-      <div className="bg-slate-900 rounded-3xl p-5 text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-bold mb-1 uppercase tracking-widest">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 pulse-ring shrink-0" />
-            <span>Workspace Active</span>
-          </div>
-          <h2 className="font-display font-bold text-lg text-white">
-            Workspace Owner: <span className="font-sans text-slate-300 text-sm font-medium">({currentUser.email || "Anonymous Sandbox Owner"})</span>
-          </h2>
-          <p className="text-[11px] text-slate-400 mt-1">
-            Publish rewards, configure your dynamic bio, and export click listings anytime. Your changes sync instantly.
-          </p>
-        </div>
+    <div className="flex h-screen overflow-hidden bg-slate-50 font-sans">
+      {/* Sidebar Layout */}
+      <AdminSidebar
+        currentTab={activeTab}
+        onTabChange={(tab) => {
+          setActiveTab(tab);
+          // Auto reset forms
+          handleCancelEdit();
+        }}
+        onLogout={handleSignOut}
+      />
 
-        <button
-          id="logout-btn"
-          onClick={handleSignOut}
-          className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold bg-white/10 hover:bg-white/20 rounded-xl text-white border border-white/5 transition-all cursor-pointer"
-        >
-          <LogOut className="h-4 w-4" />
-          <span>Exit Workspace</span>
-        </button>
-      </div>
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Universal Admin Header */}
+        <AdminHeader
+          userEmail={currentUser.email}
+          role="Administrator"
+          title={getHeaderTitle()}
+        />
 
-      {/* Segment Navigation */}
-      <div className="flex border-b border-slate-100 gap-1 overflow-x-auto">
-        <button
-          id="tab-btn-links"
-          onClick={() => setActiveTab("links")}
-          className={`flex items-center gap-1.5 py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
-            activeTab === "links"
-              ? "border-emerald-600 text-emerald-700"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <PlusCircle className="h-4 w-4" />
-          <span>Manage Referral Offers</span>
-        </button>
+        {/* Scrollable Panel Area */}
+        <main className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
+          {/* Quick Statistics (Task 11 Component integration - only on old links/analytics views) */}
+          {(activeTab === "links" || activeTab === "analytics") && (
+            <DashboardStats
+              totalLinks={deals.length}
+              activeLinks={activeLinks}
+              totalClicks={totalClicks}
+              totalConversions={totalConversions}
+            />
+          )}
 
-        <button
-          id="tab-btn-analytics"
-          onClick={() => setActiveTab("analytics")}
-          className={`flex items-center gap-1.5 py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
-            activeTab === "analytics"
-              ? "border-emerald-600 text-emerald-700"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <TrendingUp className="h-4 w-4" />
-          <span>Analytics Insights</span>
-        </button>
-
-        <button
-          id="tab-btn-profile"
-          onClick={() => setActiveTab("profile")}
-          className={`flex items-center gap-1.5 py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
-            activeTab === "profile"
-              ? "border-emerald-600 text-emerald-700"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <UserCheck className="h-4 w-4" />
-          <span>Directory Header & Bio</span>
-        </button>
-      </div>
-
-      {/* PANELS */}
-      {activeTab === "links" && (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-          {/* Form Create/Edit Link (Left 1/3) */}
-          <div
-            id="link-form-container"
-            className="xl:col-span-1 rounded-2xl border border-slate-100 bg-white p-5 shadow-xs space-y-4"
-          >
-            <h3 className="font-display font-bold text-slate-800 text-sm flex items-center gap-1.5 border-b border-slate-50 pb-2">
-              <Sliders className="h-4 w-4 text-emerald-600" />
-              <span>{editingDeal ? `Modify Offer "${editingDeal.title}"` : "Register Affiliate Offer"}</span>
-            </h3>
-
-            {formError && (
-              <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-xs text-red-600 leading-normal">
-                {formError}
-              </div>
-            )}
-
-            {formSuccess && (
-              <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-xs text-emerald-700 flex items-center gap-1.5">
-                <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
-                <span>{formSuccess}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleFormSubmit} className="space-y-4">
-              {/* Offer Name */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  Program / Product Name *
-                </label>
-                <input
-                  id="form-title"
-                  type="text"
-                  placeholder="e.g. Hostinger, Figma Pro, Shopify"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  required
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-emerald-500 bg-slate-50/30"
-                />
-              </div>
-
-              {/* Referral Target URL */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  Original Affiliate Target Link *
-                </label>
-                <input
-                  id="form-original-url"
-                  type="text"
-                  placeholder="e.g. shopify.pxf.io/your_referral_id"
-                  value={formData.originalUrl}
-                  onChange={(e) => setFormData({ ...formData, originalUrl: e.target.value })}
-                  required
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-emerald-500 bg-slate-50/30 font-mono text-[11px]"
-                />
-              </div>
-
-              {/* Category Grid Selection */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  Industry Category
-                </label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {["SaaS", "Shopping", "Finance", "Tech", "Hosting", "Custom"].map((cat) => (
+          {/* Active Tab Panel routing */}
+          {activeTab === "overview" && (
+            <div className="space-y-6">
+              {/* Dynamic Admin Greeting Card */}
+              <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-linear-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 md:p-8 text-white shadow-xs">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_var(--tw-gradient-stops))] from-indigo-500/10 via-transparent to-transparent" />
+                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <h2 className="font-display font-black text-2xl tracking-tight">
+                      Command Dashboard
+                    </h2>
+                    <p className="text-xs text-indigo-200 font-medium">
+                      Welcome back, <span className="font-bold text-white">{currentUser?.email}</span>. You have <span className="font-bold text-white">{stats.pendingReview} pending reviews</span> and <span className="font-bold text-white">{stats.sellRequests} acquisition bids</span> awaiting processing.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
                     <button
-                      id={`form-cat-${cat.toLowerCase()}`}
-                      key={cat}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, category: cat })}
-                      className={`py-1.5 rounded-lg text-[10px] font-bold border transition-all ${
-                        formData.category === cat
-                          ? "bg-emerald-50 border-emerald-500 text-emerald-800"
-                          : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
-                      }`}
+                      onClick={() => setActiveTab("casinos")}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
                     >
-                      {cat}
+                      <span>Manage Listings</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
                     </button>
-                  ))}
+                    <button
+                      onClick={() => setActiveTab("sell-requests")}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/15 border border-white/10 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>Incoming Requests</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bento Stats Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
+                <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-xs">
+                  <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase">Total Listings</span>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-extrabold text-slate-800">{stats.total}</span>
+                    <span className="text-[10px] text-slate-400">items</span>
+                  </div>
                 </div>
 
-                {formData.category === "Custom" && (
-                  <input
-                    id="form-custom-category"
-                    type="text"
-                    placeholder="Enter Custom Category..."
-                    value={formData.customCategory}
-                    onChange={(e) => setFormData({ ...formData, customCategory: e.target.value })}
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-emerald-500 bg-slate-50/30"
-                  />
-                )}
+                <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-xs">
+                  <span className="text-[10px] font-bold text-emerald-600 tracking-wider uppercase">Published</span>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-extrabold text-emerald-700">{stats.published}</span>
+                    <span className="text-[10px] text-emerald-500 font-semibold">
+                      {stats.total > 0 ? `${Math.round((stats.published / stats.total) * 100)}%` : "0%"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-xs">
+                  <span className="text-[10px] font-bold text-amber-600 tracking-wider uppercase">Drafts</span>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-extrabold text-amber-700">{stats.drafts}</span>
+                    <span className="text-[10px] text-amber-500">pending</span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-xs">
+                  <span className="text-[10px] font-bold text-indigo-600 tracking-wider uppercase">AI Generated</span>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-extrabold text-indigo-700">{stats.aiGenerated}</span>
+                    <span className="text-[10px] text-indigo-500 font-semibold">Gemini</span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-xs">
+                  <span className="text-[10px] font-bold text-rose-600 tracking-wider uppercase">Pending Review</span>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-extrabold text-rose-700">{stats.pendingReview}</span>
+                    <span className="text-[10px] text-rose-400">reviews</span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-xs">
+                  <span className="text-[10px] font-bold text-cyan-600 tracking-wider uppercase">Sell Requests</span>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-extrabold text-cyan-700">{stats.sellRequests}</span>
+                    <span className="text-[10px] text-cyan-500 font-semibold">bids</span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-xs">
+                  <span className="text-[10px] font-bold text-slate-500 tracking-wider uppercase">Total Users</span>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-extrabold text-slate-700">{stats.users}</span>
+                    <span className="text-[10px] text-slate-400">Profiles</span>
+                  </div>
+                </div>
               </div>
 
-              {/* Promo Code Coupon */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  Promo Coupon Code (Optional)
-                </label>
-                <input
-                  id="form-promo-code"
-                  type="text"
-                  placeholder="e.g. EMERALD10, GETDEAL"
-                  value={formData.discountCode}
-                  onChange={(e) => setFormData({ ...formData, discountCode: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-emerald-500 bg-slate-50/30 font-mono"
-                />
-              </div>
-
-              {/* Click Reward (Guest bonus) */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  Visitor Incentive (What they save)
-                </label>
-                <input
-                  id="form-incentive-text"
-                  type="text"
-                  placeholder="e.g. 10% Discount, Free Trial, $20 Credit"
-                  value={formData.rewardText}
-                  onChange={(e) => setFormData({ ...formData, rewardText: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-emerald-500 bg-slate-50/30 font-medium"
-                />
-              </div>
-
-              {/* Referral bounty (Owner bonus) */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  Referral Reward (What you receive)
-                </label>
-                <input
-                  id="form-bounty-text"
-                  type="text"
-                  placeholder="e.g. 15% Commish, $10 Support Bonus"
-                  value={formData.ownerRewardText}
-                  onChange={(e) => setFormData({ ...formData, ownerRewardText: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-emerald-500 bg-slate-50/30"
-                />
-              </div>
-
-              {/* Brief details paragraph */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  Offer summary details
-                </label>
-                <textarea
-                  id="form-summary"
-                  placeholder="Summarize product terms or highlights..."
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  rows={2}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-emerald-500 bg-slate-50/30 resize-none"
-                />
-              </div>
-
-              {/* Action Operations */}
-              <div className="flex items-center gap-2 pt-2">
-                {editingDeal && (
-                  <button
-                    id="cancel-edit-btn"
-                    type="button"
-                    onClick={handleCancelEdit}
-                    className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-xs rounded-xl transition-all cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                )}
-                <button
-                  id="save-deal-btn"
-                  type="submit"
-                  disabled={formLoading}
-                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              {/* Feature Modules Quick Link Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                <div
+                  onClick={() => setActiveTab("casinos")}
+                  className="bg-white border border-slate-200 rounded-3xl p-6 hover:border-indigo-300 shadow-xs cursor-pointer transition-all duration-200 group flex items-start justify-between"
                 >
-                  {formLoading ? (
-                    <Loader2 className="h-4.5 w-4.5 animate-spin" />
-                  ) : editingDeal ? (
-                    "Apply Changes"
-                  ) : (
-                    "Publish Offer"
-                  )}
-                </button>
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-extrabold text-indigo-600 tracking-widest uppercase">Affiliate Asset Hub</span>
+                    <h4 className="font-display font-black text-slate-900 text-sm">Casino Listing Directory</h4>
+                    <p className="text-xs text-slate-500 leading-normal max-w-sm font-semibold">
+                      Publish, archive, and edit dynamic web resources. Generate optimized copy using our integrated Gemini AI crawler.
+                    </p>
+                  </div>
+                  <div className="p-2.5 rounded-full bg-slate-50 group-hover:bg-indigo-50 text-slate-400 group-hover:text-indigo-600 transition shrink-0">
+                    <ChevronRight className="w-5 h-5" />
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setActiveTab("sell-requests")}
+                  className="bg-white border border-slate-200 rounded-3xl p-6 hover:border-emerald-300 shadow-xs cursor-pointer transition-all duration-200 group flex items-start justify-between"
+                >
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-extrabold text-emerald-600 tracking-widest uppercase">Capital & Acquisitions</span>
+                    <h4 className="font-display font-black text-slate-900 text-sm">Review Sell Requests</h4>
+                    <p className="text-xs text-slate-500 leading-normal max-w-sm font-semibold">
+                      Process acquisition offers submitted by registered partners. Screen proof attachments and coordinate handovers.
+                    </p>
+                  </div>
+                  <div className="p-2.5 rounded-full bg-slate-50 group-hover:bg-emerald-50 text-slate-400 group-hover:text-emerald-600 transition shrink-0">
+                    <ChevronRight className="w-5 h-5" />
+                  </div>
+                </div>
               </div>
-            </form>
-          </div>
-
-          {/* Active List (Right 2/3) */}
-          <div className="xl:col-span-2 space-y-4">
-            <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-xs">
-              <h4 className="font-display font-bold text-slate-800 text-sm mb-1">
-                Your Registered Referrals Selection ({deals.length})
-              </h4>
-              <p className="text-[11px] text-slate-400">
-                These links are published across your public profile. Clicking modify on any card pulls its parameters into the registration form.
-              </p>
             </div>
+          )}
 
-            <DealsGrid
-              deals={deals}
-              onSelectDeal={handleEditInit}
-              isAdminView={true}
-              onEditDeal={handleEditInit}
-              onDeleteDeal={onDeleteDeal}
-            />
-          </div>
-        </div>
-      )}
+          {activeTab === "casinos" && <CasinoManager />}
 
-      {activeTab === "analytics" && <AnalyticsSection deals={deals} />}
+          {activeTab === "bonuses" && <BonusManager />}
 
-      {activeTab === "profile" && (
-        <div className="max-w-2xl mx-auto rounded-2xl border border-slate-100 bg-white p-6 shadow-xs space-y-6">
-          <div className="border-b border-slate-50 pb-4">
-            <h3 className="font-display font-bold text-slate-800 text-base flex items-center gap-1.5">
-              <UserCog className="h-5 w-5 text-indigo-600" />
-              <span>Configure Header & Branding</span>
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">
-              Your users see these details clearly at the top when visiting your unique directory link.
-            </p>
-          </div>
+          {activeTab === "moderation" && <ModerationManager />}
 
-          <form onSubmit={handleProfileSubmit} className="space-y-4">
-            {profileSuccess && (
-              <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-xs text-emerald-700 flex items-center gap-1.5">
-                <CheckCircle className="h-4.5 w-4.5 text-emerald-600 shrink-0" />
-                <span>Branding header updated successfully!</span>
-              </div>
-            )}
+          {activeTab === "casino-analytics" && <CasinoAnalytics />}
 
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                Directory Title name *
-              </label>
-              <input
-                id="profile-name-field"
-                type="text"
-                value={profileName}
-                onChange={(e) => setProfileName(e.target.value)}
-                required
-                placeholder="e.g. Anik's Elite Recommendations, Creator Perks Directory"
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30"
-              />
-            </div>
+          {activeTab === "sell-requests" && <SellRequestsManager />}
 
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                Intro Bio Tagline
-              </label>
-              <textarea
-                id="profile-bio-field"
-                value={profileBio}
-                onChange={(e) => setProfileBio(e.target.value)}
-                rows={3}
-                placeholder="Write a clear invitation, e.g. 'Support my content and grab lifetime discounts on top SaaS apps using my direct codes below!'"
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30 resize-none"
-              />
-            </div>
-
-            <div className="pt-2 border-t border-slate-50 flex items-center justify-between gap-4">
-              <div className="text-[10px] text-slate-400">
-                Your direct URL parameter:{" "}
-                <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-indigo-700 font-semibold">
-                  ?u={currentUser.uid}
-                </span>
-              </div>
-              <button
-                id="save-profile-btn"
-                type="submit"
-                disabled={profileSaving || !profileName}
-                className="px-5 py-2.5 bg-indigo-650 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+          {/* Active Tab Panel routing */}
+          {activeTab === "links" && (
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
+              {/* Form Create/Edit Link (Left 1/3) */}
+              <div
+                id="link-form-container"
+                className="xl:col-span-1 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4"
               >
-                {profileSaving ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  "Save Branding Header"
+                <h3 className="font-display font-bold text-slate-800 text-sm flex items-center gap-1.5 border-b border-slate-100 pb-2.5">
+                  <Sliders className="h-4 w-4 text-indigo-600" />
+                  <span>{editingDeal ? `Modify Offer "${editingDeal.title}"` : "Register Affiliate Offer"}</span>
+                </h3>
+
+                {formError && (
+                  <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-xs text-red-600 leading-normal">
+                    {formError}
+                  </div>
                 )}
-              </button>
+
+                {formSuccess && (
+                  <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-xs text-emerald-700 flex items-center gap-1.5">
+                    <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span>{formSuccess}</span>
+                  </div>
+                )}
+
+                <form onSubmit={handleFormSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Program / Product Name *
+                    </label>
+                    <input
+                      id="form-title"
+                      type="text"
+                      placeholder="e.g. Hostinger, Stake Casino, Shopify"
+                      value={formData.title}
+                      onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                      required
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Original Affiliate Target Link *
+                    </label>
+                    <input
+                      id="form-original-url"
+                      type="text"
+                      placeholder="e.g. shopify.pxf.io/your_referral_id"
+                      value={formData.originalUrl}
+                      onChange={(e) => setFormData({ ...formData, originalUrl: e.target.value })}
+                      required
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30 font-mono text-[11px]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Industry Category
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {["Casino", "SaaS", "Shopping", "Finance", "Tech", "Custom"].map((cat) => (
+                        <button
+                          id={`form-cat-${cat.toLowerCase()}`}
+                          key={cat}
+                          type="button"
+                          onClick={() => setFormData({ ...formData, category: cat })}
+                          className={`py-1.5 rounded-lg text-[10px] font-bold border transition-all ${
+                            formData.category === cat
+                              ? "bg-indigo-50 border-indigo-500 text-indigo-800"
+                              : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+
+                    {formData.category === "Custom" && (
+                      <input
+                        id="form-custom-category"
+                        type="text"
+                        placeholder="Enter Custom Category..."
+                        value={formData.customCategory}
+                        onChange={(e) => setFormData({ ...formData, customCategory: e.target.value })}
+                        className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30"
+                      />
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Promo Coupon Code (Optional)
+                    </label>
+                    <input
+                      id="form-promo-code"
+                      type="text"
+                      placeholder="e.g. EMERALD10, GETDEAL"
+                      value={formData.discountCode}
+                      onChange={(e) => setFormData({ ...formData, discountCode: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Visitor Incentive (What they save)
+                    </label>
+                    <input
+                      id="form-incentive-text"
+                      type="text"
+                      placeholder="e.g. 10% Discount, Free Spins, $20 Credit"
+                      value={formData.rewardText}
+                      onChange={(e) => setFormData({ ...formData, rewardText: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30 font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Referral Reward (What you receive)
+                    </label>
+                    <input
+                      id="form-bounty-text"
+                      type="text"
+                      placeholder="e.g. 15% Commish, $10 Support Bonus"
+                      value={formData.ownerRewardText}
+                      onChange={(e) => setFormData({ ...formData, ownerRewardText: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Offer summary details
+                    </label>
+                    <textarea
+                      id="form-summary"
+                      placeholder="Summarize product terms or highlights..."
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      rows={2}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30 resize-none"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2">
+                    {editingDeal && (
+                      <button
+                        id="cancel-edit-btn"
+                        type="button"
+                        onClick={handleCancelEdit}
+                        className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                    <button
+                      id="save-deal-btn"
+                      type="submit"
+                      disabled={formLoading}
+                      className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      {formLoading ? (
+                        <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                      ) : editingDeal ? (
+                        "Apply Changes"
+                      ) : (
+                        "Publish Offer"
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Active List (Right 2/3) */}
+              <div className="xl:col-span-2 space-y-4">
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+                  <h4 className="font-display font-bold text-slate-800 text-sm mb-1">
+                    Your Registered Referrals Selection ({deals.length})
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    These links are published across your public profile. Clicking modify on any card pulls its parameters into the registration form.
+                  </p>
+                </div>
+
+                <DealsGrid
+                  deals={deals}
+                  onSelectDeal={handleEditInit}
+                  isAdminView={true}
+                  onEditDeal={handleEditInit}
+                  onDeleteDeal={onDeleteDeal}
+                />
+              </div>
             </div>
-          </form>
-        </div>
-      )}
+          )}
+
+          {activeTab === "analytics" && <AnalyticsSection deals={deals} />}
+
+          {activeTab === "profile" && (
+            <div className="max-w-2xl mx-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-6">
+              <div className="border-b border-slate-100 pb-4">
+                <h3 className="font-display font-bold text-slate-800 text-base flex items-center gap-1.5">
+                  <UserCog className="h-5 w-5 text-indigo-600" />
+                  <span>Configure Header & Branding</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Your users see these details clearly at the top when visiting your unique directory link.
+                </p>
+              </div>
+
+              <form onSubmit={handleProfileSubmit} className="space-y-4">
+                {profileSuccess && (
+                  <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-xs text-emerald-700 flex items-center gap-1.5">
+                    <CheckCircle className="h-4.5 w-4.5 text-emerald-600 shrink-0" />
+                    <span>Branding header updated successfully!</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Directory Title name *
+                  </label>
+                  <input
+                    id="profile-name-field"
+                    type="text"
+                    value={profileName}
+                    onChange={(e) => setProfileName(e.target.value)}
+                    required
+                    placeholder="e.g. Anik's Elite Recommendations, Creator Perks Directory"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Intro Bio Tagline
+                  </label>
+                  <textarea
+                    id="profile-bio-field"
+                    value={profileBio}
+                    onChange={(e) => setProfileBio(e.target.value)}
+                    rows={3}
+                    placeholder="Write a clear invitation, e.g. 'Support my content and grab lifetime discounts on top SaaS apps using my direct codes below!'"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30 resize-none"
+                  />
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-4">
+                  <div className="text-[10px] text-slate-400">
+                    Your direct URL parameter:{" "}
+                    <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-indigo-700 font-semibold">
+                      ?u={currentUser.uid}
+                    </span>
+                  </div>
+                  <button
+                    id="save-profile-btn"
+                    type="submit"
+                    disabled={profileSaving || !profileName}
+                    className="px-5 py-2.5 bg-indigo-650 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {profileSaving ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      "Save Branding Header"
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {activeTab === "settings" && <AdminSettings />}
+
+          {activeTab === "users" && <AdminUserManager />}
+        </main>
+      </div>
     </div>
   );
 }

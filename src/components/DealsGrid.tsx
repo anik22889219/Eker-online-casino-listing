@@ -146,7 +146,9 @@ export default function DealsGrid({
                     <div className="flex items-center gap-1.5 font-mono text-[11px] font-semibold text-slate-400">
                       <span>{deal.clicks || 0} clicks</span>
                       {isHighlyPopular && (
-                        <Flame className="h-4 w-4 text-amber-500 fill-amber-500" title="Highly clicked offer" />
+                        <span title="Highly clicked offer">
+                          <Flame className="h-4 w-4 text-amber-500 fill-amber-500" />
+                        </span>
                       )}
                     </div>
                   </div>

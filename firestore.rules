@@ -1,8 +1,354 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // Global Safety Net - Default Deny Catch-All
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // GLOBAL HELPERS
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Role-Based Access Control Lookup
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasUserDoc() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && hasUserDoc() && getUserData().role == 'super_admin';
+    }
+
+    function isAdmin() {
+      return isSignedIn() && hasUserDoc() && 
+             (getUserData().role == 'admin' || getUserData().role == 'super_admin');
+    }
+
+    function isModerator() {
+      return isSignedIn() && hasUserDoc() && 
+             (getUserData().role == 'moderator' || getUserData().role == 'admin' || getUserData().role == 'super_admin');
+    }
+
+    // =========================================================================
+    // 1. USERS COLLECTION RULES
+    // =========================================================================
+    match /users/{userId} {
+      allow get: if true; // Public directories & info are readable
+      allow list: if isAdmin(); // Only admins can list all users
+
+      allow create: if isOwner(userId) && 
+                    isValidUserProfile(request.resource.data, true) &&
+                    request.resource.data.role == 'user'; // Users cannot self-escalate on creation
+
+      allow update: if (isOwner(userId) && 
+                    isValidUserProfile(request.resource.data, false) &&
+                    request.resource.data.role == resource.data.role && // Prevent role self-escalation
+                    request.resource.data.status == resource.data.status && // Prevent status self-reactivation
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'bio', 'photoURL', 'updatedAt'])) ||
+                    isAdmin(); // Admins can change everything (roles, status)
+
+      allow delete: if isSuperAdmin();
+    }
+
+    function isValidUserProfile(data, isCreate) {
+      return (!isCreate || (
+        data.keys().hasAll(['email', 'displayName', 'role', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().size() >= 6 && data.keys().size() <= 8
+      )) &&
+      (!('email' in data) || (data.email is string && data.email.size() <= 256)) &&
+      (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 128)) &&
+      (!('role' in data) || (data.role in ['super_admin', 'admin', 'moderator', 'user'])) &&
+      (!('status' in data) || (data.status in ['active', 'suspended', 'pending'])) &&
+      (!('bio' in data) || (data.bio is string && data.bio.size() <= 2048)) &&
+      (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 2048));
+    }
+
+    // =========================================================================
+    // 2. LEGACY AFFILIATE LINKS (BACKWARD COMPATIBLE)
+    // =========================================================================
+    match /affiliateLinks/{linkId} {
+      allow get, list: if true;
+
+      allow create: if isSignedIn() && 
+                    request.resource.data.userId == request.auth.uid && 
+                    isValidAffiliateLink(request.resource.data, true);
+
+      allow update: if (
+        // Action 1: Public Click Increment
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clicks']) &&
+         request.resource.data.clicks == resource.data.clicks + 1)
+      ) || (
+        // Action 2: Owner or Admin Edit
+        (isOwner(resource.data.userId) || isAdmin()) &&
+        request.resource.data.userId == resource.data.userId &&
+        isValidAffiliateLink(request.resource.data, false) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'title', 'originalUrl', 'description', 'category', 'discountCode', 
+          'rewardText', 'ownerRewardText', 'slug', 'isArchived', 'clicks'
+        ])
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    function isValidAffiliateLink(data, isCreate) {
+      return (!isCreate || (
+        data.keys().hasAll(['userId', 'title', 'originalUrl', 'clicks', 'createdAt', 'isArchived']) &&
+        data.keys().size() >= 6 && data.keys().size() <= 12
+      )) &&
+      (!('userId' in data) || (data.userId is string && data.userId.size() <= 128)) &&
+      (!('title' in data) || (data.title is string && data.title.size() <= 128)) &&
+      (!('originalUrl' in data) || (data.originalUrl is string && data.originalUrl.size() <= 2048)) &&
+      (!('description' in data) || (data.description is string && data.description.size() <= 2048)) &&
+      (!('category' in data) || (data.category is string && data.category.size() <= 128)) &&
+      (!('discountCode' in data) || (data.discountCode is string && data.discountCode.size() <= 128)) &&
+      (!('rewardText' in data) || (data.rewardText is string && data.rewardText.size() <= 512)) &&
+      (!('ownerRewardText' in data) || (data.ownerRewardText is string && data.ownerRewardText.size() <= 512)) &&
+      (!('clicks' in data) || (data.clicks is int && data.clicks >= 0)) &&
+      (!('slug' in data) || (data.slug is string && data.slug.size() <= 128)) &&
+      (!('isArchived' in data) || (data.isArchived is bool));
+    }
+
+    // =========================================================================
+    // 3. CASINOS COLLECTION RULES
+    // =========================================================================
+    match /casinos/{casinoId} {
+      allow get: if resource.data.status == 'published' || isAdmin();
+      allow list: if resource.data.status == 'published' || isAdmin();
+
+      allow create: if isAdmin() && isValidCasino(request.resource.data, true);
+      allow update: if isAdmin() && isValidCasino(request.resource.data, false);
+      allow delete: if isSuperAdmin();
+    }
+
+    function isValidCasino(data, isCreate) {
+      return (!isCreate || (
+        data.keys().hasAll(['slug', 'affiliateLink', 'casinoName', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().size() >= 6
+      )) &&
+      (!('slug' in data) || (data.slug is string && data.slug.size() <= 128)) &&
+      (!('affiliateLink' in data) || (data.affiliateLink is string && data.affiliateLink.size() <= 2048)) &&
+      (!('casinoName' in data) || (data.casinoName is string && data.casinoName.size() <= 256)) &&
+      (!('casinoLogo' in data) || (data.casinoLogo is string && data.casinoLogo.size() <= 2048)) &&
+      (!('bannerImage' in data) || (data.bannerImage is string && data.bannerImage.size() <= 2048)) &&
+      (!('shortDescription' in data) || (data.shortDescription is string && data.shortDescription.size() <= 1024)) &&
+      (!('landingContent' in data) || (data.landingContent is string && data.landingContent.size() <= 10000)) &&
+      (!('manualReview' in data) || (data.manualReview is string && data.manualReview.size() <= 10000)) &&
+      (!('welcomeBonus' in data) || (data.welcomeBonus is string && data.welcomeBonus.size() <= 512)) &&
+      (!('category' in data) || (data.category is string && data.category.size() <= 128)) &&
+      (!('country' in data) || (data.country is string && data.country.size() <= 128)) &&
+      (!('seoTitle' in data) || (data.seoTitle is string && data.seoTitle.size() <= 256)) &&
+      (!('metaDescription' in data) || (data.metaDescription is string && data.metaDescription.size() <= 512)) &&
+      (!('status' in data) || (data.status in ['draft', 'ai_generated', 'pending_review', 'published', 'archived'])) &&
+      (!('aiGenerated' in data) || (data.aiGenerated is bool)) &&
+      (!('featured' in data) || (data.featured is bool)) &&
+      (!('averageRating' in data) || (data.averageRating is number)) &&
+      (!('totalReviews' in data) || (data.totalReviews is int && data.totalReviews >= 0));
+    }
+
+    // =========================================================================
+    // 4. REVIEWS COLLECTION RULES
+    // =========================================================================
+    match /reviews/{reviewId} {
+      allow get: if resource.data.approved == true || isModerator();
+      allow list: if resource.data.approved == true || isModerator();
+
+      allow create: if isSignedIn() && 
+                    request.resource.data.userId == request.auth.uid && 
+                    request.resource.data.approved == false && // Must start unapproved
+                    isValidReview(request.resource.data, true);
+
+      allow update: if (isOwner(resource.data.userId) && 
+                    request.resource.data.userId == resource.data.userId &&
+                    request.resource.data.approved == resource.data.approved && // Cannot self-approve
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'comment', 'rating']) &&
+                    isValidReview(request.resource.data, false)) ||
+                    isModerator(); // Moderators can approve or edit
+
+      allow delete: if isOwner(resource.data.userId) || isModerator();
+    }
+
+    function isValidReview(data, isCreate) {
+      return (!isCreate || (
+        data.keys().hasAll(['casinoId', 'userId', 'rating', 'title', 'comment', 'approved', 'createdAt']) &&
+        data.keys().size() == 7
+      )) &&
+      (!('casinoId' in data) || (data.casinoId is string && data.casinoId.size() <= 128)) &&
+      (!('userId' in data) || (data.userId is string && data.userId.size() <= 128)) &&
+      (!('rating' in data) || (data.rating is number && data.rating >= 1 && data.rating <= 5)) &&
+      (!('title' in data) || (data.title is string && data.title.size() <= 128)) &&
+      (!('comment' in data) || (data.comment is string && data.comment.size() <= 4096)) &&
+      (!('approved' in data) || (data.approved is bool));
+    }
+
+    // =========================================================================
+    // 5. RATINGS COLLECTION RULES
+    // =========================================================================
+    match /ratings/{ratingId} {
+      allow get: if true;
+      allow list: if true;
+
+      allow create: if isSignedIn() && 
+                    request.resource.data.userId == request.auth.uid && 
+                    isValidRating(request.resource.data);
+                    
+      allow update: if isOwner(resource.data.userId) && 
+                    request.resource.data.userId == resource.data.userId &&
+                    isValidRating(request.resource.data);
+
+      allow delete: if isOwner(resource.data.userId) || isModerator();
+    }
+
+    function isValidRating(data) {
+      return data.keys().hasAll(['casinoId', 'userId', 'rating', 'createdAt', 'updatedAt']) &&
+             data.keys().size() == 5 &&
+             data.casinoId is string && data.casinoId.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.rating is number && data.rating >= 1 && data.rating <= 5;
+    }
+
+    // =========================================================================
+    // 6. BONUSES COLLECTION RULES
+    // =========================================================================
+    match /bonuses/{bonusId} {
+      allow get, list: if true;
+
+      allow create, update: if isAdmin() && isValidBonus(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    function isValidBonus(data) {
+      return data.keys().hasAll(['casinoId', 'title', 'description', 'bonusType', 'amount', 'active']) &&
+             data.casinoId is string && data.casinoId.size() <= 128 &&
+             data.title is string && data.title.size() <= 256 &&
+             data.description is string && data.description.size() <= 2048 &&
+             data.bonusType is string && data.bonusType.size() <= 128 &&
+             data.amount is number &&
+             data.active is bool;
+    }
+
+    // =========================================================================
+    // 7. PROMO OFFERS COLLECTION RULES
+    // =========================================================================
+    match /promoOffers/{offerId} {
+      allow get, list: if true;
+
+      allow create, update: if isAdmin() && isValidPromoOffer(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    function isValidPromoOffer(data) {
+      return data.keys().hasAll(['casinoId', 'promoCode', 'title', 'active']) &&
+             data.casinoId is string && data.casinoId.size() <= 128 &&
+             data.promoCode is string && data.promoCode.size() <= 128 &&
+             data.title is string && data.title.size() <= 256 &&
+             data.active is bool;
+    }
+
+    // =========================================================================
+    // 8. JACKPOT SCREENSHOTS COLLECTION RULES
+    // =========================================================================
+    match /jackpotScreenshots/{screenshotId} {
+      allow get: if resource.data.approved == true || isModerator();
+      allow list: if resource.data.approved == true || isModerator();
+
+      allow create: if isSignedIn() && 
+                    request.resource.data.uploadedBy == request.auth.uid &&
+                    request.resource.data.approved == false && // Must start unapproved
+                    isValidJackpotScreenshot(request.resource.data);
+
+      allow update: if isModerator(); // Only mods can approve/decline
+
+      allow delete: if isOwner(resource.data.uploadedBy) || isModerator();
+    }
+
+    function isValidJackpotScreenshot(data) {
+      return data.keys().hasAll(['casinoId', 'image', 'amount', 'approved', 'uploadedBy', 'uploadedAt']) &&
+             data.casinoId is string && data.casinoId.size() <= 128 &&
+             data.image is string && data.image.size() <= 2048 &&
+             data.amount is number &&
+             data.approved is bool &&
+             data.uploadedBy is string && data.uploadedBy.size() <= 128;
+    }
+
+    // =========================================================================
+    // 9. SELL REQUESTS COLLECTION RULES
+    // =========================================================================
+    match /sellRequests/{requestId} {
+      allow get: if isModerator() || (isSignedIn() && resource.data.email == request.auth.token.email);
+      allow list: if isModerator();
+
+      allow create: if isValidSellRequest(request.resource.data, true) &&
+                    request.resource.data.status == 'pending'; // Force pending
+
+      allow update: if isAdmin() && isValidSellRequest(request.resource.data, false);
+      allow delete: if isAdmin();
+    }
+
+    function isValidSellRequest(data, isCreate) {
+      return (!isCreate || (
+        data.keys().hasAll(['name', 'email', 'casinoName', 'affiliateLink', 'amount', 'message', 'status']) &&
+        data.keys().size() >= 7
+      )) &&
+      (!('name' in data) || (data.name is string && data.name.size() <= 256)) &&
+      (!('email' in data) || (data.email is string && data.email.size() <= 256)) &&
+      (!('casinoName' in data) || (data.casinoName is string && data.casinoName.size() <= 256)) &&
+      (!('affiliateLink' in data) || (data.affiliateLink is string && data.affiliateLink.size() <= 2048)) &&
+      (!('screenshot' in data) || (data.screenshot is string && data.screenshot.size() <= 2048)) &&
+      (!('amount' in data) || (data.amount is number)) &&
+      (!('message' in data) || (data.message is string && data.message.size() <= 4096)) &&
+      (!('status' in data) || (data.status in ['pending', 'approved', 'rejected']));
+    }
+
+    // =========================================================================
+    // 10. AI HISTORY COLLECTION RULES (SYSTEM-ONLY WRITES)
+    // =========================================================================
+    match /aiHistory/{historyId} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin(); // Clients cannot write unless they are verified Admin backend triggers
+      allow delete: if isSuperAdmin();
+    }
+
+    // =========================================================================
+    // 11. SYSTEM NOTIFICATIONS COLLECTION RULES
+    // =========================================================================
+    match /notifications/{notificationId} {
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid; // Secured list query enforcer
+
+      allow create: if isAdmin(); // Notifications are triggered by backend/admins only
+      allow update: if isSignedIn() && 
+                    resource.data.userId == request.auth.uid && 
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']); // Can only toggle read
+
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // =========================================================================
+    // 12. GLOBAL SETTINGS COLLECTION RULES
+    // =========================================================================
+    match /settings/{settingsId} {
+      allow get: if true; // Public system settings (maintenance flag, default categories, etc)
+      allow list: if isAdmin();
+
+      allow create, update: if isAdmin();
+      allow delete: if isSuperAdmin();
     }
   }
 }

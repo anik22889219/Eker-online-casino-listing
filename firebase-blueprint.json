@@ -22,25 +22,237 @@
     },
     "UserProfile": {
       "title": "User Profile",
-      "description": "Profile information of the link directory owner.",
+      "description": "Profile information of the user with advanced role permissions.",
       "type": "object",
       "properties": {
-        "email": { "type": "string", "description": "Primary email of the owner" },
-        "displayName": { "type": "string", "description": "Name or brand to display at the top of the directory" },
-        "bio": { "type": "string", "description": "Short bio or tagline to introduce their links" },
+        "uid": { "type": "string" },
+        "displayName": { "type": "string", "description": "Branding title or username of the user" },
+        "email": { "type": "string", "description": "Verified email address" },
+        "role": { "type": "string", "enum": ["super_admin", "admin", "moderator", "user"] },
+        "status": { "type": "string", "enum": ["active", "suspended", "pending"] },
+        "photoURL": { "type": "string" },
+        "bio": { "type": "string", "description": "Intro bio or branding description" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "displayName", "role", "status", "createdAt", "updatedAt"]
+    },
+    "Casino": {
+      "title": "Casino",
+      "description": "Information about an affiliate casino and listing.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "slug": { "type": "string" },
+        "affiliateLink": { "type": "string" },
+        "casinoName": { "type": "string" },
+        "casinoLogo": { "type": "string" },
+        "bannerImage": { "type": "string" },
+        "shortDescription": { "type": "string" },
+        "landingContent": { "type": "string" },
+        "manualReview": { "type": "string" },
+        "welcomeBonus": { "type": "string" },
+        "category": { "type": "string" },
+        "country": { "type": "string" },
+        "seoTitle": { "type": "string" },
+        "metaDescription": { "type": "string" },
+        "keywords": { "type": "array" },
+        "status": { "type": "string", "enum": ["draft", "ai_generated", "pending_review", "published", "archived"] },
+        "aiGenerated": { "type": "boolean" },
+        "featured": { "type": "boolean" },
+        "averageRating": { "type": "number" },
+        "totalReviews": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["slug", "affiliateLink", "casinoName", "status", "createdAt", "updatedAt"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "A user-submitted review for a listed casino.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "casinoId": { "type": "string" },
+        "userId": { "type": "string" },
+        "rating": { "type": "number" },
+        "title": { "type": "string" },
+        "comment": { "type": "string" },
+        "approved": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["email", "displayName", "createdAt"]
+      "required": ["casinoId", "userId", "rating", "title", "comment", "approved", "createdAt"]
+    },
+    "Rating": {
+      "title": "Rating",
+      "description": "An individual star rating for a casino.",
+      "type": "object",
+      "properties": {
+        "casinoId": { "type": "string" },
+        "userId": { "type": "string" },
+        "rating": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["casinoId", "userId", "rating", "createdAt", "updatedAt"]
+    },
+    "Bonus": {
+      "title": "Bonus",
+      "description": "Promotional bonus offered by a listed casino.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "casinoId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "bonusType": { "type": "string" },
+        "amount": { "type": "number" },
+        "expiryDate": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["casinoId", "title", "description", "bonusType", "amount", "active"]
+    },
+    "PromoOffer": {
+      "title": "PromoOffer",
+      "description": "A promotional code or deal associated with a casino.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "casinoId": { "type": "string" },
+        "promoCode": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "active": { "type": "boolean" },
+        "expiryDate": { "type": "string" }
+      },
+      "required": ["casinoId", "promoCode", "title", "active"]
+    },
+    "JackpotScreenshot": {
+      "title": "JackpotScreenshot",
+      "description": "A screenshot of a major win submitted by a user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "casinoId": { "type": "string" },
+        "image": { "type": "string" },
+        "amount": { "type": "number" },
+        "approved": { "type": "boolean" },
+        "uploadedBy": { "type": "string" },
+        "uploadedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["casinoId", "image", "amount", "approved", "uploadedBy", "uploadedAt"]
+    },
+    "SellRequest": {
+      "title": "SellRequest",
+      "description": "A submission requesting listing approval or acquisition.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "casinoName": { "type": "string" },
+        "affiliateLink": { "type": "string" },
+        "screenshot": { "type": "string" },
+        "amount": { "type": "number" },
+        "message": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }
+      },
+      "required": ["name", "email", "casinoName", "affiliateLink", "amount", "message", "status"]
+    },
+    "AiHistory": {
+      "title": "AiHistory",
+      "description": "Log of automated content generation prompts and outcomes.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "casinoId": { "type": "string" },
+        "prompt": { "type": "string" },
+        "response": { "type": "string" },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "generatedBy": { "type": "string" }
+      },
+      "required": ["casinoId", "prompt", "response", "generatedAt", "generatedBy"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "System alerts or user inbox messages.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "read": { "type": "boolean" },
+        "type": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "message", "read", "type", "createdAt"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "Global administrator control parameters.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "maintenanceMode": { "type": "boolean" },
+        "defaultCategory": { "type": "string" },
+        "allowedCountries": { "type": "array" },
+        "aiModelName": { "type": "string" },
+        "maxUploadSizeMb": { "type": "number" },
+        "systemEmail": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["maintenanceMode", "defaultCategory", "aiModelName", "maxUploadSizeMb", "systemEmail", "updatedAt"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "UserProfile",
-      "description": "Information about directory owners."
+      "description": "Detailed user accounts and administrative privileges."
     },
     "/affiliateLinks/{linkId}": {
       "schema": "AffiliateLink",
-      "description": "Collection of public affiliate and referral links."
+      "description": "Backward-compatible legacy link registry."
+    },
+    "/casinos/{casinoId}": {
+      "schema": "Casino",
+      "description": "Affiliate casino records containing comprehensive listing details."
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Individual ratings and written feedback submissions."
+    },
+    "/ratings/{ratingId}": {
+      "schema": "Rating",
+      "description": "Calculated or individual stars for average rating aggregation."
+    },
+    "/bonuses/{bonusId}": {
+      "schema": "Bonus",
+      "description": "Special promo or cashback bonuses belonging to casinos."
+    },
+    "/promoOffers/{offerId}": {
+      "schema": "PromoOffer",
+      "description": "Coupon promotional code mappings for specific partners."
+    },
+    "/jackpotScreenshots/{screenshotId}": {
+      "schema": "JackpotScreenshot",
+      "description": "User uploaded jackpot victory verification records."
+    },
+    "/sellRequests/{requestId}": {
+      "schema": "SellRequest",
+      "description": "External submit requests for listing onboarding."
+    },
+    "/aiHistory/{historyId}": {
+      "schema": "AiHistory",
+      "description": "Prompts log and model response history."
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "System inbox notification logs."
+    },
+    "/settings/{settingsId}": {
+      "schema": "Settings",
+      "description": "Platform global control settings."
     }
   }
 }
