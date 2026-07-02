@@ -99,7 +99,7 @@ export const CasinoDetails: React.FC<CasinoDetailsProps> = ({ deals = [], onGoTo
     if (!slug) return;
     setLoading(true);
 
-    const q = query(collection(db, "casinos"), where("slug", "==", slug));
+    const q = query(collection(db, "casinos"), where("slug", "==", slug), where("status", "==", "published"));
 
     const unsubscribe = onSnapshot(
       q,
@@ -229,7 +229,8 @@ export const CasinoDetails: React.FC<CasinoDetailsProps> = ({ deals = [], onGoTo
     // D. User Reviews for this casino (Part 2: approved reviews visible to public)
     const qReviews = query(
       collection(db, "reviews"),
-      where("casinoId", "==", casino.id)
+      where("casinoId", "==", casino.id),
+      where("approved", "==", true)
     );
     const unsubReviews = onSnapshot(qReviews, (snap) => {
       const list: Review[] = [];
@@ -613,10 +614,10 @@ export const CasinoDetails: React.FC<CasinoDetailsProps> = ({ deals = [], onGoTo
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
             <button
               onClick={handleVisitClick}
-              className="px-6 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-2xl shadow-lg transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-1.5 cursor-pointer"
+              className="w-full sm:w-auto px-6 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-2xl shadow-lg transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <span>Visit & Claim {casino.welcomeBonus}</span>
               <ExternalLink className="h-4 w-4" />
@@ -917,6 +918,40 @@ export const CasinoDetails: React.FC<CasinoDetailsProps> = ({ deals = [], onGoTo
                         </div>
 
                         <p className="text-xs text-slate-600 leading-relaxed italic font-medium">"{rev.comment}"</p>
+
+                        {/* Render Jackpot and Balance screenshots inside the review if present */}
+                        {(rev.jackpotScreenshot || rev.balanceScreenshot) && (
+                          <div className="grid grid-cols-2 gap-3 pt-2">
+                            {rev.jackpotScreenshot && (
+                              <div className="space-y-1">
+                                <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block">Jackpot Screenshot</span>
+                                <div className="rounded-xl overflow-hidden border border-slate-100 bg-slate-50 h-32 flex items-center justify-center">
+                                  <img 
+                                    src={rev.jackpotScreenshot} 
+                                    alt="Jackpot win screenshot" 
+                                    className="h-full w-full object-contain cursor-zoom-in hover:scale-102 transition-transform duration-250"
+                                    onClick={() => window.open(rev.jackpotScreenshot, "_blank")}
+                                    referrerPolicy="no-referrer"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                            {rev.balanceScreenshot && (
+                              <div className="space-y-1">
+                                <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block">Balance Screenshot</span>
+                                <div className="rounded-xl overflow-hidden border border-slate-100 bg-slate-50 h-32 flex items-center justify-center">
+                                  <img 
+                                    src={rev.balanceScreenshot} 
+                                    alt="Balance proof screenshot" 
+                                    className="h-full w-full object-contain cursor-zoom-in hover:scale-102 transition-transform duration-250"
+                                    onClick={() => window.open(rev.balanceScreenshot, "_blank")}
+                                    referrerPolicy="no-referrer"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1007,15 +1042,8 @@ export const CasinoDetails: React.FC<CasinoDetailsProps> = ({ deals = [], onGoTo
                 className="group relative border border-slate-100 bg-white rounded-2xl p-4 flex flex-col justify-between hover:shadow-md transition"
               >
                 <div className="flex items-center gap-3">
-                  <div className="h-12 w-12 rounded-xl bg-white p-1 border overflow-hidden shrink-0 flex items-center justify-center">
-                    {c.casinoLogo ? (
-                      <img src={c.casinoLogo} alt="" className="h-full w-full object-contain" referrerPolicy="no-referrer" />
-                    ) : (
-                      <span className="font-black text-xs text-slate-700">{c.casinoName.substring(0, 2)}</span>
-                    )}
-                  </div>
                   <div>
-                    <h4 className="font-sans font-bold text-slate-900 text-sm group-hover:text-indigo-600 transition truncate max-w-[180px]">
+                    <h4 className="font-sans font-bold text-slate-900 text-sm group-hover:text-indigo-600 transition truncate max-w-[240px]">
                       {c.casinoName}
                     </h4>
                     <span className="text-[10px] font-mono text-slate-400 font-bold">{c.category}</span>

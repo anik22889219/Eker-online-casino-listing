@@ -63,8 +63,8 @@ export const UserManager: React.FC = () => {
         </div>
 
         {/* User Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+        <div className="overflow-x-auto no-scrollbar">
+          <table className="w-full min-w-[700px] text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50 text-xs font-bold text-slate-500 tracking-wider">
                 <th className="px-6 py-4">Display Name</th>

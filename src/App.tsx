@@ -32,6 +32,8 @@ import {
   Check,
   RefreshCw,
   Share2,
+  Home,
+  Search,
 } from "lucide-react";
 import { AffiliateLink, UserProfile } from "./types";
 import AdminPanel from "./components/AdminPanel";
@@ -39,6 +41,7 @@ import DealsGrid from "./components/DealsGrid";
 import DealModal from "./components/DealModal";
 import CasinoDetails from "./components/CasinoDetails";
 import HomeView from "./components/home/HomeView";
+import { JackpotListing } from "./components/JackpotListing";
 
 // Predefined demo fallbacks if DB has no links yet, keeping the site looking magnificent
 const DEMO_PRESETS = [
@@ -134,10 +137,11 @@ function AppContent() {
           if (snap.exists()) {
             setCurrentUserProfile({ uid: user.uid, ...snap.data() } as UserProfile);
           } else {
+            const isBootstrapAdmin = user.email === "aminulhoqueanik@gmail.com";
             const tempProfile: Omit<UserProfile, "uid"> = {
               email: user.email || "anonymous-owner@directory.com",
               displayName: user.displayName || "My Premium Directory",
-              role: "admin",
+              role: isBootstrapAdmin ? "admin" : "user",
               status: "active",
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
@@ -385,7 +389,7 @@ function AppContent() {
                 <button
                   id="header-share-portal-btn"
                   onClick={handleCopyPortalShare}
-                  className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-3 rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                  className="hidden sm:flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-3 rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
                 >
                   {copiedShareLink ? (
                     <>
@@ -403,7 +407,7 @@ function AppContent() {
                 <button
                   id="header-admin-toggle-btn"
                   onClick={() => navigate(currentUser ? "/admin" : "/login")}
-                  className="flex items-center gap-1.5 py-2 px-3.5 rounded-xl text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
+                  className="hidden sm:flex items-center gap-1.5 py-2 px-3.5 rounded-xl text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
                 >
                   <Settings2 className="h-4 w-4" />
                   <span>Creator Portal</span>
@@ -413,7 +417,7 @@ function AppContent() {
           </header>
         )}
 
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 md:pb-8">
           {content}
         </main>
 
@@ -440,6 +444,59 @@ function AppContent() {
         )}
 
         <DealModal deal={selectedDeal} onClose={() => setSelectedDeal(null)} onGoToLink={handleGoToLink} />
+
+        {/* Mobile Bottom Navigation - Super Premium & Prime FAB submission */}
+        {!hideHeader && (
+          <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-150 h-16 flex md:hidden items-center justify-around px-2 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] pb-safe">
+            <Link
+              to="/"
+              className={`flex flex-col items-center justify-center gap-1 text-[10px] font-bold ${
+                window.location.pathname === '/' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-700'
+              } transition-colors`}
+            >
+              <Home className="h-5 w-5" />
+              <span>Home</span>
+            </Link>
+            
+            <button
+              id="mobile-search-trigger-btn"
+              onClick={() => {
+                navigate("/");
+                setTimeout(() => {
+                  const searchInput = document.getElementById("hero-search");
+                  if (searchInput) {
+                    searchInput.focus();
+                    searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }
+                }, 100);
+              }}
+              className="flex flex-col items-center justify-center gap-1 text-[10px] font-bold text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+            >
+              <Search className="h-5 w-5" />
+              <span>Search</span>
+            </button>
+
+            <button
+              id="mobile-screenshot-modal-btn"
+              onClick={() => {
+                window.dispatchEvent(new Event('open-screenshot-modal'));
+              }}
+              className="flex flex-col items-center justify-center -mt-5 bg-gradient-to-tr from-indigo-600 to-indigo-700 text-white h-12 w-12 rounded-full shadow-lg hover:from-indigo-500 hover:to-indigo-650 transition-all border-4 border-white cursor-pointer transform hover:scale-105 active:scale-95"
+            >
+              <Sparkles className="h-5 w-5 animate-pulse" />
+            </button>
+
+            <Link
+              to="/admin"
+              className={`flex flex-col items-center justify-center gap-1 text-[10px] font-bold ${
+                window.location.pathname.startsWith('/admin') || window.location.pathname.startsWith('/login') ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-700'
+              } transition-colors`}
+            >
+              <Settings2 className="h-5 w-5" />
+              <span>Creator</span>
+            </Link>
+          </nav>
+        )}
       </div>
     );
   };
@@ -449,6 +506,13 @@ function AppContent() {
       {/* 1. HOME CATALOG PATH */}
       <Route path="/" element={renderLayout(
         <HomeView />,
+        false,
+        true
+      )} />
+
+      {/* Jackpot Listing Submission Form */}
+      <Route path="/jackpot-listing" element={renderLayout(
+        <JackpotListing />,
         false,
         true
       )} />

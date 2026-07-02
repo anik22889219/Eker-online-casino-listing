@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { db } from "../../firebase";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { Casino } from "../../types/firestore";
 import HomeHero from "./HomeHero";
 import CasinoCard from "./CasinoCard";
@@ -24,11 +24,12 @@ export const HomeView: React.FC = () => {
 
   // 1. Listen for published casinos in real-time
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "casinos"), (snapshot) => {
+    const q = query(collection(db, "casinos"), where("status", "==", "published"));
+    const unsub = onSnapshot(q, (snapshot) => {
       const list: Casino[] = [];
       snapshot.forEach((docSnap) => {
         const raw = docSnap.data();
-        if (raw.status === "published" && !raw.isDeleted) {
+        if (!raw.isDeleted) {
           list.push({ id: docSnap.id, ...raw } as Casino);
         }
       });

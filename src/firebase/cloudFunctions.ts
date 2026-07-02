@@ -37,6 +37,25 @@ export async function generateCasinoContent(affiliateLink: string, bannerImage?:
 }
 
 /**
+ * Triggers rapid server-side crawling of website brand name and brand logo,
+ * automatically uploading the found logo to Cloudinary.
+ */
+export async function crawlWebsiteLogoAndName(affiliateLink: string) {
+  const functions = getAppFunctions();
+  if (!functions) {
+    throw new Error("Cloud Functions not initialized.");
+  }
+
+  const crawl = httpsCallable(functions, "crawlWebsiteLogoAndName");
+  const response = await crawl({ affiliateLink });
+  return response.data as {
+    success: boolean;
+    name: string;
+    logoUrl: string;
+  };
+}
+
+/**
  * Requests a secure upload signature from the Firebase Cloud Function to perform
  * a direct, signed upload to Cloudinary.
  */

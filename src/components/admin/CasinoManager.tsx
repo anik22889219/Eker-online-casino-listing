@@ -11,7 +11,7 @@ import {
   query,
   where,
 } from "firebase/firestore";
-import { generateCasinoContent } from "../../firebase/cloudFunctions";
+import { generateCasinoContent, crawlWebsiteLogoAndName } from "../../firebase/cloudFunctions";
 import { uploadToCloudinary } from "../../services/cloudinaryService";
 import {
   Search,
@@ -38,6 +38,8 @@ import {
   Layers,
   ChevronDown,
   X,
+  Database,
+  AlertTriangle,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
@@ -144,7 +146,12 @@ export const CasinoManager: React.FC = () => {
   const [newBannerFile, setNewBannerFile] = useState<File | null>(null);
   const [newBannerPreview, setNewBannerPreview] = useState<string>("");
   const [newBannerUploading, setNewBannerUploading] = useState<boolean>(false);
-  const [triggerAiOnCreate, setTriggerAiOnCreate] = useState<boolean>(true);
+  const [triggerAiOnCreate, setTriggerAiOnCreate] = useState<boolean>(false); // disabled by default for lightning-fast manual uploads
+  const [newCasinoName, setNewCasinoName] = useState<string>("");
+  const [newWelcomeBonus, setNewWelcomeBonus] = useState<string>("Exclusive Deposit Bonus");
+  const [newCasinoCategory, setNewCasinoCategory] = useState<string>("Casino");
+  const [newCasinoStatus, setNewCasinoStatus] = useState<"draft" | "published">("published"); // default to Published instantly
+  const [openEditorAfterCreate, setOpenEditorAfterCreate] = useState<boolean>(false); // default to false, keeping creators in the table flow
 
   // Editing Form State
   const [editTab, setEditTab] = useState<"general" | "images" | "content" | "seo" | "preview">("general");
@@ -157,6 +164,12 @@ export const CasinoManager: React.FC = () => {
   const [formLoading, setFormLoading] = useState<boolean>(false);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Submission popup states
+  const [isSubmittingPopup, setIsSubmittingPopup] = useState<boolean>(false);
+  const [submissionStep, setSubmissionStep] = useState<"uploading" | "assets" | "saving" | "ai" | "success" | "error">("saving");
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [createdCasinoInfo, setCreatedCasinoInfo] = useState<{ name: string; id: string; category: string; welcomeBonus: string; bannerImage: string } | null>(null);
 
   // Real-time Subscriptions
   useEffect(() => {
@@ -255,8 +268,15 @@ export const CasinoManager: React.FC = () => {
 
     try {
       if (type === "newBanner") {
+        setNewBannerUploading(true);
+        setFormError(null);
+        setFormSuccess(null);
+        // Optimize banner (max 1600x900)
+        const optimized = await optimizeImage(file, 1600, 900);
+        const url = await uploadToCloudinary(optimized, "banners", file.name);
+        setNewBannerPreview(url);
         setNewBannerFile(file);
-        setNewBannerPreview(URL.createObjectURL(file));
+        setFormSuccess("Banner uploaded and optimized successfully to Cloudinary!");
       } else if (type === "logo") {
         setUploadingLogo(true);
         // Optimize logo (max 400x400)
@@ -278,6 +298,7 @@ export const CasinoManager: React.FC = () => {
     } finally {
       setUploadingLogo(false);
       setUploadingBanner(false);
+      setNewBannerUploading(false);
     }
   };
 
@@ -287,99 +308,158 @@ export const CasinoManager: React.FC = () => {
     setFormError(null);
     setFormSuccess(null);
 
-    if (!newAffiliateLink.trim()) {
+    let formattedLink = newAffiliateLink.trim();
+    if (!formattedLink) {
       setFormError("Affiliate landing link is required.");
       return;
     }
 
+    // Auto-prepend https:// if the user didn't enter a protocol (e.g. they typed 'stake.com')
+    if (!/^https?:\/\//i.test(formattedLink)) {
+      formattedLink = `https://${formattedLink}`;
+    }
+
     // Basic URL validation
     try {
-      new URL(newAffiliateLink);
+      new URL(formattedLink);
     } catch (_) {
       setFormError("Please enter a valid affiliate URL (e.g., https://example.com)");
       return;
     }
 
+    if (newBannerUploading) {
+      setFormError("Please wait for your banner image to finish uploading to Cloudinary.");
+      return;
+    }
+
     setFormLoading(true);
+    setIsSubmittingPopup(true);
+    setSubmissionError(null);
+    setCreatedCasinoInfo(null);
+    setSubmissionStep(triggerAiOnCreate ? "ai" : "saving");
 
     try {
-      let bannerUrl = "";
-      if (newBannerFile) {
-        setNewBannerUploading(true);
-        const optimized = await optimizeImage(newBannerFile, 1600, 900);
-        bannerUrl = await uploadToCloudinary(optimized, "banners", newBannerFile.name);
-      }
+      const bannerUrl = newBannerPreview;
 
       if (triggerAiOnCreate) {
         // Trigger Server AI flow
-        setFormSuccess("Triggering Gemini 2.5 Flash crawler... please wait.");
-        const aiResponse = await generateCasinoContent(newAffiliateLink, bannerUrl);
+        const aiResponse = await generateCasinoContent(formattedLink, bannerUrl);
 
         if (aiResponse.success) {
           // Fetch newly created casino to launch edit screen
           const newDocRef = doc(db, "casinos", aiResponse.casinoId);
-          onSnapshot(newDocRef, (snap) => {
+          const unsubscribe = onSnapshot(newDocRef, (snap) => {
             if (snap.exists()) {
+              unsubscribe();
               const createdCasino = { id: snap.id, ...snap.data() } as Casino;
-              setEditingCasino(createdCasino);
-              setEditFields(createdCasino);
-              setEditKeywordsInput(createdCasino.keywords?.join(", ") || "");
+              if (openEditorAfterCreate) {
+                setEditingCasino(createdCasino);
+                setEditFields(createdCasino);
+                setEditKeywordsInput(createdCasino.keywords?.join(", ") || "");
+              }
               setIsAdding(false);
               setNewAffiliateLink("");
+              setNewCasinoName("");
+              setNewWelcomeBonus("Exclusive Deposit Bonus");
+              setNewCasinoStatus("published");
               setNewBannerFile(null);
               setNewBannerPreview("");
-              setFormSuccess(`AI content generated perfectly for "${createdCasino.casinoName}"! Draft loaded.`);
+
+              setCreatedCasinoInfo({
+                name: createdCasino.casinoName,
+                id: createdCasino.id,
+                category: createdCasino.category || "Casino",
+                welcomeBonus: createdCasino.welcomeBonus || "Exclusive Offer",
+                bannerImage: createdCasino.bannerImage || ""
+              });
+              setSubmissionStep("success");
             }
           });
         } else {
           throw new Error("AI Content generator returned an unsuccessful state.");
         }
       } else {
-        // Manual blank draft creation
-        const urlObj = new URL(newAffiliateLink);
+        // Manual fast creation (the streamlined user request path with auto-asset extraction)
+        setSubmissionStep("assets");
+
+        let crawledName = "";
+        let crawledLogoUrl = "";
+
+        try {
+          console.log("Crawling website brand assets on-demand...");
+          const crawlResult = await crawlWebsiteLogoAndName(formattedLink);
+          if (crawlResult.success) {
+            crawledName = crawlResult.name;
+            crawledLogoUrl = crawlResult.logoUrl;
+          }
+        } catch (crawlErr) {
+          console.warn("Lightweight crawl failed, falling back to hostname extraction:", crawlErr);
+        }
+
+        setSubmissionStep("saving");
+
+        const urlObj = new URL(formattedLink);
         const rawHost = urlObj.hostname.replace("www.", "");
         const tempName = rawHost.split(".")[0];
-        const initialSlug = tempName.toLowerCase().replace(/[^a-z0-9-]/g, "-") + "-" + Math.random().toString(36).substring(2, 6);
+        const hostFallbackName = tempName.charAt(0).toUpperCase() + tempName.slice(1);
+
+        const finalName = newCasinoName.trim() || crawledName || hostFallbackName;
+        const initialSlug = finalName.toLowerCase().replace(/[^a-z0-9-]/g, "-") + "-" + Math.random().toString(36).substring(2, 6);
 
         const newDraft: Omit<Casino, "id"> = {
           slug: initialSlug,
-          affiliateLink: newAffiliateLink,
-          casinoName: tempName.charAt(0).toUpperCase() + tempName.slice(1),
-          casinoLogo: "",
+          affiliateLink: formattedLink,
+          casinoName: finalName,
+          casinoLogo: crawledLogoUrl || "",
           bannerImage: bannerUrl,
-          shortDescription: "A new draft affiliate listing.",
-          landingContent: `# ${tempName}\nWelcome introduction goes here...`,
+          shortDescription: `Exclusive affiliate offer for ${finalName}. Sign up today through our verified direct link!`,
+          landingContent: `# ${finalName}\nJoin ${finalName} using our exclusive partner link. Click above to claim your direct sign-up bonus package and start playing now!`,
           manualReview: "",
-          welcomeBonus: "Exclusive Deposit Bonus",
-          category: "Casino",
+          welcomeBonus: newWelcomeBonus.trim() || "Exclusive Deposit Bonus",
+          category: newCasinoCategory,
           country: "US, CA, GB",
-          seoTitle: `${tempName} Review & Signup`,
-          metaDescription: `Read our comprehensive guide to ${tempName} and claim custom deals.`,
-          keywords: [tempName, "casino", "affiliate"],
-          status: "draft",
+          seoTitle: `${finalName} - Best Direct Deal`,
+          metaDescription: `Direct sign-up link for ${finalName} with top-tier active bonuses and promotion codes.`,
+          keywords: [finalName.toLowerCase(), "casino", "affiliate", "bonus"],
+          status: newCasinoStatus,
           aiGenerated: false,
           featured: false,
-          averageRating: 0,
-          totalReviews: 0,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
+          averageRating: 5,
+          totalReviews: 1,
+          createdAt: serverTimestamp() as any,
+          updatedAt: serverTimestamp() as any,
         };
 
         const docRef = await addDoc(collection(db, "casinos"), newDraft);
         const createdCasino = { id: docRef.id, ...newDraft } as Casino;
 
-        setEditingCasino(createdCasino);
-        setEditFields(createdCasino);
-        setEditKeywordsInput(createdCasino.keywords?.join(", ") || "");
+        if (openEditorAfterCreate) {
+          setEditingCasino(createdCasino);
+          setEditFields(createdCasino);
+          setEditKeywordsInput(createdCasino.keywords?.join(", ") || "");
+        }
+
         setIsAdding(false);
         setNewAffiliateLink("");
+        setNewCasinoName("");
+        setNewWelcomeBonus("Exclusive Deposit Bonus");
+        setNewCasinoStatus("published");
         setNewBannerFile(null);
         setNewBannerPreview("");
-        setFormSuccess("Custom draft listing created! Complete details below.");
+
+        setCreatedCasinoInfo({
+          name: finalName,
+          id: docRef.id,
+          category: newCasinoCategory,
+          welcomeBonus: newWelcomeBonus.trim() || "Exclusive Deposit Bonus",
+          bannerImage: bannerUrl
+        });
+        setSubmissionStep("success");
       }
     } catch (err: any) {
       console.error(err);
-      setFormError(err.message || "Failed to initiate listing.");
+      setSubmissionError(err.message || "Failed to initiate listing.");
+      setSubmissionStep("error");
     } finally {
       setFormLoading(false);
       setNewBannerUploading(false);
@@ -684,6 +764,40 @@ export const CasinoManager: React.FC = () => {
           </div>
 
           <form onSubmit={handleCreateCasino} className="space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Casino or Brand Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={newCasinoName}
+                  onChange={(e) => setNewCasinoName(e.target.value)}
+                  placeholder="Leave empty to auto-extract from link"
+                  disabled={formLoading}
+                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Directory Category *
+                </label>
+                <select
+                  value={newCasinoCategory}
+                  onChange={(e) => setNewCasinoCategory(e.target.value)}
+                  disabled={formLoading}
+                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-medium bg-white focus:outline-hidden focus:border-indigo-500"
+                >
+                  <option value="Casino">Casino</option>
+                  <option value="Poker">Poker</option>
+                  <option value="Sportsbook">Sportsbook</option>
+                  <option value="Crypto">Crypto</option>
+                  <option value="Bonus">Bonus</option>
+                </select>
+              </div>
+            </div>
+
             <div>
               <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">
                 Affiliate Target Link *
@@ -701,25 +815,36 @@ export const CasinoManager: React.FC = () => {
 
             <div>
               <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">
-                Banner Promo Image (Optional)
+                Banner Promo Image (Upload Banner - Optional)
               </label>
               <div className="flex flex-col sm:flex-row items-center gap-4">
                 <div className="flex-1 w-full">
-                  <label className="flex flex-col items-center justify-center h-28 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50/50 transition">
-                    <UploadCloud className="w-6 h-6 text-slate-400 mb-1" />
-                    <span className="text-[10px] font-bold text-slate-500">Click to Upload Banner</span>
-                    <span className="text-[8px] text-slate-400">JPG/PNG up to 5MB</span>
+                  <label className="flex flex-col items-center justify-center h-28 border-2 border-dashed border-slate-200 hover:border-indigo-400 rounded-xl cursor-pointer hover:bg-slate-50/50 transition">
+                    {newBannerUploading ? (
+                      <div className="flex flex-col items-center justify-center">
+                        <Loader2 className="w-6 h-6 text-indigo-600 animate-spin mb-1" />
+                        <span className="text-[10px] font-bold text-indigo-600">Uploading banner to Cloudinary...</span>
+                        <span className="text-[8px] text-slate-400 font-medium">Please do not close this window</span>
+                      </div>
+                    ) : (
+                      <>
+                        <UploadCloud className="w-6 h-6 text-slate-400 mb-1" />
+                        <span className="text-[10px] font-bold text-slate-500">Click or Drag to Upload Banner</span>
+                        <span className="text-[8px] text-slate-400 font-medium">JPG/PNG up to 5MB</span>
+                      </>
+                    )}
                     <input
                       type="file"
                       accept="image/*"
                       onChange={(e) => handleFileChange(e, "newBanner")}
                       className="hidden"
+                      disabled={newBannerUploading || formLoading}
                     />
                   </label>
                 </div>
 
                 {newBannerPreview && (
-                  <div className="relative w-full sm:w-40 h-28 rounded-xl border border-slate-200 overflow-hidden shrink-0">
+                  <div className="relative w-full sm:w-40 h-28 rounded-xl border border-slate-200 overflow-hidden shrink-0 bg-slate-50">
                     <img src={newBannerPreview} alt="Preview" className="w-full h-full object-cover" />
                     <button
                       type="button"
@@ -727,7 +852,7 @@ export const CasinoManager: React.FC = () => {
                         setNewBannerFile(null);
                         setNewBannerPreview("");
                       }}
-                      className="absolute top-1.5 right-1.5 p-1 bg-slate-900/80 rounded-full text-white hover:bg-slate-900 transition"
+                      className="absolute top-1.5 right-1.5 p-1 bg-slate-900/80 rounded-full text-white hover:bg-slate-900 transition cursor-pointer"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -736,29 +861,92 @@ export const CasinoManager: React.FC = () => {
               </div>
             </div>
 
-            {/* AI Crawler Switch */}
-            <div className="p-3.5 bg-indigo-50/40 border border-indigo-100 rounded-2xl flex items-start gap-3">
-              <Sparkles className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <label className="flex items-center justify-between cursor-pointer select-none">
-                  <span className="text-xs font-bold text-indigo-950">AI Content Crawler Generation</span>
-                  <input
-                    type="checkbox"
-                    checked={triggerAiOnCreate}
-                    onChange={(e) => setTriggerAiOnCreate(e.target.checked)}
-                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-300"
-                  />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Deal Promo Tag / Welcome Slogan
                 </label>
-                <p className="text-[10px] text-indigo-700/85 mt-1 leading-normal">
-                  Crawls the landing page, fetches canonical metadata, and instructs Gemini 2.5 Flash to automatically compile descriptions, Pros/Cons, welcome offers, and FAQs into a fresh draft.
-                </p>
+                <input
+                  type="text"
+                  value={newWelcomeBonus}
+                  onChange={(e) => setNewWelcomeBonus(e.target.value)}
+                  placeholder="e.g. 100% Up To $1000 + 50 Free Spins"
+                  disabled={formLoading}
+                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Publishing Status
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNewCasinoStatus("published")}
+                    className={`py-2.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      newCasinoStatus === "published"
+                        ? "bg-emerald-50 border-emerald-500 text-emerald-800 font-bold"
+                        : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
+                    }`}
+                  >
+                    Published (Active)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewCasinoStatus("draft")}
+                    className={`py-2.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      newCasinoStatus === "draft"
+                        ? "bg-amber-50 border-amber-500 text-amber-800 font-bold"
+                        : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
+                    }`}
+                  >
+                    Draft (Hidden)
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* AI crawler toggle */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200/60 rounded-2xl space-y-3">
+              <div className="flex items-start gap-3">
+                <Sparkles className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <label className="flex items-center justify-between cursor-pointer select-none">
+                    <span className="text-xs font-bold text-slate-800">Use Gemini AI content compiler?</span>
+                    <input
+                      type="checkbox"
+                      checked={triggerAiOnCreate}
+                      onChange={(e) => setTriggerAiOnCreate(e.target.checked)}
+                      className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-300"
+                    />
+                  </label>
+                  <p className="text-[10px] text-slate-500 mt-1 leading-normal">
+                    Optionally crawl and automatically write complete landing page content, reviews, SEO tags, and FAQs using Gemini 2.5 Flash.
+                  </p>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-200/60 pt-2 flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700">Open advanced editor after saving?</span>
+                <input
+                  type="checkbox"
+                  checked={openEditorAfterCreate}
+                  onChange={(e) => setOpenEditorAfterCreate(e.target.checked)}
+                  className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-300"
+                />
               </div>
             </div>
 
             <div className="flex gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => setIsAdding(false)}
+                onClick={() => {
+                  setIsAdding(false);
+                  setNewAffiliateLink("");
+                  setNewBannerFile(null);
+                  setNewBannerPreview("");
+                }}
                 className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-xs rounded-xl transition cursor-pointer"
               >
                 Cancel
@@ -771,10 +959,10 @@ export const CasinoManager: React.FC = () => {
                 {formLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Generating...
+                    <span>Saving...</span>
                   </>
                 ) : (
-                  "Create Casino"
+                  <span>Publish Offer Listing</span>
                 )}
               </button>
             </div>
@@ -1400,8 +1588,8 @@ export const CasinoManager: React.FC = () => {
           </div>
 
           {/* Table Container */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+          <div className="overflow-x-auto no-scrollbar">
+            <table className="w-full min-w-[900px] text-left border-collapse">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/70 text-[10px] font-bold text-slate-500 tracking-wider">
                   <th className="px-6 py-4 text-center w-12">
@@ -1726,6 +1914,175 @@ export const CasinoManager: React.FC = () => {
                 Close Simulator
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Beautiful Submission Process and Success/Error Popup */}
+      {isSubmittingPopup && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full overflow-hidden p-6 text-center space-y-6 animate-in fade-in zoom-in-95 duration-250 relative">
+            
+            {/* ASSET EXTRACTION STEP */}
+            {submissionStep === "assets" && (
+              <div className="space-y-5 py-4">
+                <div className="mx-auto w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center border border-blue-100 relative">
+                  <UploadCloud className="w-7 h-7 text-blue-600 animate-pulse" />
+                  <Loader2 className="w-16 h-16 text-blue-500 animate-spin absolute inset-0 rounded-full border-2 border-transparent border-t-blue-600" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="font-display font-black text-lg text-slate-900 tracking-tight">
+                    Extracting Brand Logo & Name...
+                  </h3>
+                  <p className="text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
+                    We are crawling the website from your Affiliate Link, extracting the official brand logo and name, and uploading the logo image safely to your Cloudinary storage folder.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* SAVING TO DATABASE STEP */}
+            {submissionStep === "saving" && (
+              <div className="space-y-5 py-4">
+                <div className="mx-auto w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center border border-indigo-100 relative">
+                  <Database className="w-7 h-7 text-indigo-600 animate-pulse" />
+                  <Loader2 className="w-16 h-16 text-indigo-500 animate-spin absolute inset-0 rounded-full border-2 border-transparent border-t-indigo-600" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="font-display font-black text-lg text-slate-900 tracking-tight">
+                    Publishing Offer...
+                  </h3>
+                  <p className="text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
+                    We are creating your affiliate offer listing and registering it securely in the Firestore database. Please hold on a moment.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* AI GENERATING CONTENT STEP */}
+            {submissionStep === "ai" && (
+              <div className="space-y-5 py-4">
+                <div className="mx-auto w-16 h-16 bg-purple-50 rounded-full flex items-center justify-center border border-purple-100 relative">
+                  <Sparkles className="w-7 h-7 text-purple-600 animate-pulse" />
+                  <Loader2 className="w-16 h-16 text-purple-500 animate-spin absolute inset-0 rounded-full border-2 border-transparent border-t-purple-600" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="font-display font-black text-lg text-slate-900 tracking-tight">
+                    Gemini AI Copywriter Active...
+                  </h3>
+                  <p className="text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
+                    Gemini 2.5 Flash is actively crawling the destination link, analyzing brand metadata, and writing complete landing page content, reviews, SEO tags, and FAQs.
+                  </p>
+                </div>
+                <div className="bg-purple-50/50 border border-purple-150/40 rounded-xl p-3 text-[10px] text-purple-700 font-medium leading-normal text-left">
+                  💡 This background operation typically takes 10 to 25 seconds depending on server speed.
+                </div>
+              </div>
+            )}
+
+            {/* ERROR STEP */}
+            {submissionStep === "error" && (
+              <div className="space-y-5 py-4">
+                <div className="mx-auto w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center border border-rose-100">
+                  <AlertTriangle className="w-7 h-7 text-rose-600 animate-bounce" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="font-display font-black text-lg text-slate-900 tracking-tight text-rose-950">
+                    Failed to Create Offer
+                  </h3>
+                  <p className="text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
+                    {submissionError || "An unexpected database or cloud connection error occurred during submission."}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsSubmittingPopup(false)}
+                  className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-sm transition cursor-pointer"
+                >
+                  Close & Modify Input
+                </button>
+              </div>
+            )}
+
+            {/* SUCCESS STEP */}
+            {submissionStep === "success" && createdCasinoInfo && (
+              <div className="space-y-5">
+                <div className="mx-auto w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center border border-emerald-100 animate-bounce">
+                  <CheckCircle className="w-8 h-8 text-emerald-600" />
+                </div>
+                
+                <div className="space-y-2">
+                  <h3 className="font-display font-black text-xl text-emerald-950 tracking-tight">
+                    Offer Published Successfully!
+                  </h3>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Your affiliate campaign is live and active on your portal directory.
+                  </p>
+                </div>
+
+                {/* Listing Details Card */}
+                <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-4 text-left space-y-3">
+                  <div className="flex items-center gap-3">
+                    {createdCasinoInfo.bannerImage ? (
+                      <img 
+                        src={createdCasinoInfo.bannerImage} 
+                        alt={createdCasinoInfo.name} 
+                        className="w-14 h-10 object-cover rounded-lg border border-slate-200 bg-white shrink-0"
+                      />
+                    ) : (
+                      <div className="w-14 h-10 bg-indigo-50 border border-indigo-100 rounded-lg flex items-center justify-center shrink-0">
+                        <Database className="w-4 h-4 text-indigo-500" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="text-xs font-black text-slate-900 truncate">
+                          {createdCasinoInfo.name}
+                        </h4>
+                        <span className="text-[9px] font-extrabold uppercase bg-indigo-50 text-indigo-600 border border-indigo-150 px-1.5 py-0.2 rounded">
+                          {createdCasinoInfo.category}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 font-medium truncate mt-0.5">
+                        {createdCasinoInfo.welcomeBonus}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2.5">
+                  <button
+                    onClick={() => {
+                      setIsSubmittingPopup(false);
+                      setFormSuccess(`Listing for "${createdCasinoInfo.name}" published perfectly!`);
+                    }}
+                    className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+                  >
+                    Close Dialog
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setIsSubmittingPopup(false);
+                      // Set editing casino to open direct editor right away
+                      const docRef = doc(db, "casinos", createdCasinoInfo.id);
+                      const unsubscribe = onSnapshot(docRef, (snap) => {
+                        if (snap.exists()) {
+                          unsubscribe();
+                          const c = { id: snap.id, ...snap.data() } as Casino;
+                          setEditingCasino(c);
+                          setEditFields(c);
+                          setEditKeywordsInput(c.keywords?.join(", ") || "");
+                        }
+                      });
+                    }}
+                    className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <span>Edit Assets</span>
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
       )}

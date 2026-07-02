@@ -1,22 +1,33 @@
 import React from 'react';
-import { User, Bell } from 'lucide-react';
+import { User, Bell, Menu } from 'lucide-react';
 
 interface AdminHeaderProps {
   userEmail?: string | null;
   role?: string;
   title: string;
+  onToggleSidebar?: () => void;
 }
 
 export const AdminHeader: React.FC<AdminHeaderProps> = ({
   userEmail,
   role,
   title,
+  onToggleSidebar,
 }) => {
   return (
-    <header className="bg-white border-b border-slate-200 h-16 px-6 flex items-center justify-between">
-      {/* Dynamic Title */}
-      <div>
-        <h2 className="text-lg font-bold text-slate-900 tracking-tight">{title}</h2>
+    <header className="bg-white border-b border-slate-200 h-16 px-4 md:px-6 flex items-center justify-between shrink-0">
+      {/* Dynamic Title with Hamburger on Mobile */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onToggleSidebar}
+          className="md:hidden p-2 -ml-1 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+          aria-label="Open sidebar"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <div>
+          <h2 className="text-sm md:text-lg font-bold text-slate-900 tracking-tight line-clamp-1">{title}</h2>
+        </div>
       </div>
 
       {/* Right User Bar */}

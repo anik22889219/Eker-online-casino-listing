@@ -512,6 +512,32 @@ export const ModerationManager: React.FC = () => {
                         <div className="space-y-1">
                           <h5 className="font-bold text-slate-900 line-clamp-1">{rev.title}</h5>
                           <p className="text-slate-500 line-clamp-2 leading-relaxed italic">"{rev.comment}"</p>
+                          
+                          {/* Display uploaded proofs if present */}
+                          {(rev.jackpotScreenshot || rev.balanceScreenshot) && (
+                            <div className="flex gap-2 pt-1.5">
+                              {rev.jackpotScreenshot && (
+                                <a 
+                                  href={rev.jackpotScreenshot} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-650 hover:underline bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-md"
+                                >
+                                  <span>Jackpot Src ↗</span>
+                                </a>
+                              )}
+                              {rev.balanceScreenshot && (
+                                <a 
+                                  href={rev.balanceScreenshot} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-650 hover:underline bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-md"
+                                >
+                                  <span>Balance Src ↗</span>
+                                </a>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </td>
                       <td className="p-4 text-slate-400 font-mono font-bold text-[10px]">

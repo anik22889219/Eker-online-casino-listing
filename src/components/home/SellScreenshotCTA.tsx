@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { db } from "../../firebase";
 import { collection, addDoc } from "firebase/firestore";
 import { uploadToCloudinary } from "../../services/cloudinaryService";
@@ -21,6 +21,18 @@ export const SellScreenshotCTA: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleOpenModal = () => {
+      setIsOpen(true);
+      setSuccess(false);
+      setError(null);
+    };
+    window.addEventListener("open-screenshot-modal", handleOpenModal);
+    return () => {
+      window.removeEventListener("open-screenshot-modal", handleOpenModal);
+    };
+  }, []);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();

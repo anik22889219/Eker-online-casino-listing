@@ -1,5 +1,6 @@
-import React from "react";
-import { Search, SlidersHorizontal, CheckCircle, Flame, Star, Percent } from "lucide-react";
+import React, { useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import { Search, SlidersHorizontal, CheckCircle, Flame, Star } from "lucide-react";
 
 interface HomeHeroProps {
   searchTerm: string;
@@ -32,6 +33,9 @@ export const HomeHero: React.FC<HomeHeroProps> = ({
   countries,
   bonusTypes,
 }) => {
+  const [showFilters, setShowFilters] = useState(false);
+  const hasActiveFilters = selectedCountry !== "all" || selectedBonusType !== "all" || featuredOnly;
+
   return (
     <div className="bg-slate-900 text-white rounded-3xl p-6 sm:p-10 shadow-xl relative overflow-hidden mb-10 border border-slate-800">
       {/* Background ambient accents */}
@@ -62,78 +66,108 @@ export const HomeHero: React.FC<HomeHeroProps> = ({
 
       {/* Interactive Search & Filter Engine Container */}
       <div className="bg-slate-950/80 backdrop-blur-md border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-2xl relative z-10 space-y-4">
-        {/* Row 1: Search Input */}
-        <div className="relative">
-          <Search className="absolute left-4 top-3.5 h-5 w-5 text-slate-500" />
-          <input
-            id="hero-search"
-            type="text"
-            placeholder="Search by casino name, gaming category (e.g. Slots, Live), or country..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-800 bg-slate-900/60 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:bg-slate-900 text-sm font-medium transition-all"
-            aria-label="Search casinos"
-          />
+        {/* Row 1: Search Input & Filter Toggle */}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-4 top-3.5 h-5 w-5 text-slate-500" />
+            <input
+              id="hero-search"
+              type="text"
+              placeholder="Search by casino name, gaming category (e.g. Slots, Live), or country..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-12 pr-4 py-3.5 rounded-xl border border-slate-800 bg-slate-900/60 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:bg-slate-900 text-sm font-medium transition-all"
+              aria-label="Search casinos"
+            />
+          </div>
+          
+          <button
+            type="button"
+            onClick={() => setShowFilters(!showFilters)}
+            className={`px-4 py-3.5 rounded-xl border font-bold text-xs transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 ${
+              showFilters || hasActiveFilters
+                ? "bg-indigo-600 border-indigo-500 text-white shadow-md"
+                : "bg-slate-900 border-slate-800 text-slate-350 hover:bg-slate-850 hover:text-white"
+            }`}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            <span>Filters</span>
+            {hasActiveFilters && (
+              <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            )}
+          </button>
         </div>
 
-        {/* Row 2: Secondary Dropdown Filters */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {/* Country Filter */}
-          <div className="space-y-1">
-            <label htmlFor="country-select" className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Target Country</label>
-            <select
-              id="country-select"
-              value={selectedCountry}
-              onChange={(e) => setSelectedCountry(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-800 bg-slate-900 text-xs font-semibold text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer"
+        {/* Row 2: Secondary Dropdown Filters (Animated Accordion) */}
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: "easeInOut" }}
+              className="overflow-hidden"
             >
-              <option value="all">🌐 All Countries / Universal</option>
-              {countries.map((c) => (
-                <option key={c} value={c}>📍 {c}</option>
-              ))}
-            </select>
-          </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-800/40">
+                {/* Country Filter */}
+                <div className="space-y-1">
+                  <label htmlFor="country-select" className="text-[11px] font-bold text-slate-450 uppercase tracking-wider">Target Country</label>
+                  <select
+                    id="country-select"
+                    value={selectedCountry}
+                    onChange={(e) => setSelectedCountry(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-800 bg-slate-900 text-xs font-semibold text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    <option value="all">🌐 All Countries / Universal</option>
+                    {countries.map((c) => (
+                      <option key={c} value={c}>📍 {c}</option>
+                    ))}
+                  </select>
+                </div>
 
-          {/* Bonus Type Filter */}
-          <div className="space-y-1">
-            <label htmlFor="bonus-type-select" className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Promo Bonus Type</label>
-            <select
-              id="bonus-type-select"
-              value={selectedBonusType}
-              onChange={(e) => setSelectedBonusType(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-800 bg-slate-900 text-xs font-semibold text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer"
-            >
-              <option value="all">🎁 All Bonus Types</option>
-              {bonusTypes.map((bt) => (
-                <option key={bt} value={bt}>✨ {bt}</option>
-              ))}
-            </select>
-          </div>
+                {/* Bonus Type Filter */}
+                <div className="space-y-1">
+                  <label htmlFor="bonus-type-select" className="text-[11px] font-bold text-slate-450 uppercase tracking-wider">Promo Bonus Type</label>
+                  <select
+                    id="bonus-type-select"
+                    value={selectedBonusType}
+                    onChange={(e) => setSelectedBonusType(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-800 bg-slate-900 text-xs font-semibold text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    <option value="all">🎁 All Bonus Types</option>
+                    {bonusTypes.map((bt) => (
+                      <option key={bt} value={bt}>✨ {bt}</option>
+                    ))}
+                  </select>
+                </div>
 
-          {/* Featured Toggle */}
-          <div className="flex items-end pb-1.5">
-            <label 
-              id="featured-checkbox-label"
-              className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-slate-800 bg-slate-900/50 hover:bg-slate-900 text-xs font-bold text-slate-300 cursor-pointer w-full transition"
-            >
-              <input
-                id="featured-checkbox"
-                type="checkbox"
-                checked={featuredOnly}
-                onChange={(e) => setFeaturedOnly(e.target.checked)}
-                className="rounded border-slate-800 text-indigo-600 focus:ring-indigo-500/20 h-4 w-4 bg-slate-950"
-              />
-              <span className="flex items-center gap-1">
-                <Star className="h-3.5 w-3.5 text-amber-400 fill-amber-400" />
-                Featured Operators Only
-              </span>
-            </label>
-          </div>
-        </div>
+                {/* Featured Toggle */}
+                <div className="flex items-end pb-1">
+                  <label 
+                    id="featured-checkbox-label"
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-slate-800 bg-slate-900/50 hover:bg-slate-900 text-xs font-bold text-slate-300 cursor-pointer w-full transition"
+                  >
+                    <input
+                      id="featured-checkbox"
+                      type="checkbox"
+                      checked={featuredOnly}
+                      onChange={(e) => setFeaturedOnly(e.target.checked)}
+                      className="rounded border-slate-800 text-indigo-600 focus:ring-indigo-500/20 h-4 w-4 bg-slate-950"
+                    />
+                    <span className="flex items-center gap-1">
+                      <Star className="h-3.5 w-3.5 text-amber-400 fill-amber-400" />
+                      Featured Operators Only
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Row 3: Horizontal scrollable Category Tags */}
         <div className="pt-2 border-t border-slate-800/60">
-          <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-slate-800">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1.5 no-scrollbar">
             <button
               id="cat-pill-all"
               onClick={() => setSelectedCategory("all")}

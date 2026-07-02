@@ -51,6 +51,8 @@ export interface Review {
   comment: string;
   approved: boolean;
   createdAt: string;
+  jackpotScreenshot?: string;
+  balanceScreenshot?: string;
 }
 
 export interface Rating {

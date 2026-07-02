@@ -41,6 +41,7 @@ import { SellRequestsManager } from "./admin/SellRequestsManager";
 import { BonusManager } from "./admin/BonusManager";
 import { ModerationManager } from "./admin/ModerationManager";
 import { CasinoAnalytics } from "./admin/CasinoAnalytics";
+import { JackpotListing } from "./JackpotListing";
 
 interface AdminPanelProps {
   deals: AffiliateLink[];
@@ -63,6 +64,7 @@ export default function AdminPanel({
 }: AdminPanelProps) {
   // Navigation tabs: overview, casinos, sell-requests, links, analytics, profile, settings, users
   const [activeTab, setActiveTab] = useState<string>("overview");
+  const [isSidebarOpenMobile, setIsSidebarOpenMobile] = useState<boolean>(false);
 
   // Real-time directory statistics state
   const [stats, setStats] = useState({
@@ -76,6 +78,13 @@ export default function AdminPanel({
   });
 
   useEffect(() => {
+    const isUserAdmin = currentUser && userProfile && (userProfile.role === "admin" || userProfile.role === "super_admin");
+    const isUserModerator = currentUser && userProfile && (userProfile.role === "moderator" || userProfile.role === "admin" || userProfile.role === "super_admin");
+
+    if (!currentUser || !userProfile || !isUserModerator) {
+      return;
+    }
+
     // Exclude soft-deleted records from stats
     const unsubCasinos = onSnapshot(collection(db, "casinos"), (snap) => {
       const docs = snap.docs.map((d) => d.data());
@@ -88,22 +97,34 @@ export default function AdminPanel({
         aiGenerated: activeDocs.filter((d: any) => d.aiGenerated || d.status === "ai_generated").length,
         pendingReview: activeDocs.filter((d: any) => d.status === "pending_review").length,
       }));
+    }, (err) => {
+      console.warn("Stats listener casinos error: ", err);
     });
 
-    const unsubSell = onSnapshot(collection(db, "sellRequests"), (snap) => {
-      setStats((prev) => ({ ...prev, sellRequests: snap.size }));
-    });
+    let unsubSell = () => {};
+    if (isUserModerator) {
+      unsubSell = onSnapshot(collection(db, "sellRequests"), (snap) => {
+        setStats((prev) => ({ ...prev, sellRequests: snap.size }));
+      }, (err) => {
+        console.warn("Stats listener sellRequests error: ", err);
+      });
+    }
 
-    const unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
-      setStats((prev) => ({ ...prev, users: snap.size }));
-    });
+    let unsubUsers = () => {};
+    if (isUserAdmin) {
+      unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
+        setStats((prev) => ({ ...prev, users: snap.size }));
+      }, (err) => {
+        console.warn("Stats listener users error: ", err);
+      });
+    }
 
     return () => {
       unsubCasinos();
       unsubSell();
       unsubUsers();
     };
-  }, []);
+  }, [currentUser, userProfile]);
 
   // Auth form state
   const [authEmail, setAuthEmail] = useState("");
@@ -543,6 +564,7 @@ export default function AdminPanel({
       case 'casinos': return 'Casino Listings Asset Manager';
       case 'bonuses': return 'Promo Campaign & Bonuses Manager';
       case 'moderation': return 'Vetting Desk & Moderation';
+      case 'jackpot-listing': return 'Submit Jackpot Proof';
       case 'casino-analytics': return 'Casino Conversion Analytics';
       case 'sell-requests': return 'Affiliate Sell Requests';
       case 'links': return 'Affiliate Offers';
@@ -564,8 +586,11 @@ export default function AdminPanel({
           setActiveTab(tab);
           // Auto reset forms
           handleCancelEdit();
+          setIsSidebarOpenMobile(false);
         }}
         onLogout={handleSignOut}
+        isOpenMobile={isSidebarOpenMobile}
+        onCloseMobile={() => setIsSidebarOpenMobile(false)}
       />
 
       {/* Main Content Area */}
@@ -573,12 +598,13 @@ export default function AdminPanel({
         {/* Universal Admin Header */}
         <AdminHeader
           userEmail={currentUser.email}
-          role="Administrator"
+          role={userProfile?.role === "admin" || userProfile?.role === "super_admin" ? "Administrator" : "Moderator"}
           title={getHeaderTitle()}
+          onToggleSidebar={() => setIsSidebarOpenMobile(!isSidebarOpenMobile)}
         />
 
         {/* Scrollable Panel Area */}
-        <main className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6">
           {/* Quick Statistics (Task 11 Component integration - only on old links/analytics views) */}
           {(activeTab === "links" || activeTab === "analytics") && (
             <DashboardStats
@@ -624,7 +650,7 @@ export default function AdminPanel({
               </div>
 
               {/* Bento Stats Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
                 <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-xs">
                   <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase">Total Listings</span>
                   <div className="mt-2 flex items-baseline gap-1.5">
@@ -726,6 +752,8 @@ export default function AdminPanel({
           {activeTab === "bonuses" && <BonusManager />}
 
           {activeTab === "moderation" && <ModerationManager />}
+
+          {activeTab === "jackpot-listing" && <JackpotListing />}
 
           {activeTab === "casino-analytics" && <CasinoAnalytics />}
 

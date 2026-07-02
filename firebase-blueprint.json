@@ -79,7 +79,9 @@
         "title": { "type": "string" },
         "comment": { "type": "string" },
         "approved": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "jackpotScreenshot": { "type": "string" },
+        "balanceScreenshot": { "type": "string" }
       },
       "required": ["casinoId", "userId", "rating", "title", "comment", "approved", "createdAt"]
     },
@@ -203,6 +205,34 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["maintenanceMode", "defaultCategory", "aiModelName", "maxUploadSizeMb", "systemEmail", "updatedAt"]
+    },
+    "ClickRecord": {
+      "title": "Click Record",
+      "description": "An affiliate link click out event log used for real-time traffic statistics and conversions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "casinoId": { "type": "string" },
+        "casinoName": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "anonymousVisitorId": { "type": "string" },
+        "deviceType": { "type": "string", "enum": ["Mobile", "Tablet", "Desktop"] },
+        "referrer": { "type": "string" },
+        "country": { "type": "string" }
+      },
+      "required": ["casinoId", "casinoName", "timestamp", "anonymousVisitorId", "deviceType", "referrer"]
+    },
+    "PageViewRecord": {
+      "title": "Page View Record",
+      "description": "A casino details page view event log used to compute click-through rates.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "casinoId": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "anonymousVisitorId": { "type": "string" }
+      },
+      "required": ["casinoId", "timestamp", "anonymousVisitorId"]
     }
   },
   "firestore": {
@@ -253,6 +283,14 @@
     "/settings/{settingsId}": {
       "schema": "Settings",
       "description": "Platform global control settings."
+    },
+    "/clicks/{clickId}": {
+      "schema": "ClickRecord",
+      "description": "Individually tracked clickout redirection events."
+    },
+    "/pageViews/{pageViewId}": {
+      "schema": "PageViewRecord",
+      "description": "Individually tracked page impressions for CTR metrics."
     }
   }
 }

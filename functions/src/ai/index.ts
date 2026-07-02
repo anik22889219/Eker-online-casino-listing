@@ -1,6 +1,7 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import { GoogleGenAI, Type } from "@google/genai";
+import * as crypto from "crypto";
 
 /**
  * Validates if a string is a valid HTTP or HTTPS URL
@@ -61,6 +62,19 @@ async function fetchWebsiteMetadata(url: string) {
     const ogTitle = getMeta("og:title") || "";
     const favicon = getLink("icon") || "/favicon.ico";
     const canonical = getLink("canonical") || "";
+    const appleTouchIcon = getLink("apple-touch-icon") || getLink("apple-touch-icon-precomposed") || "";
+
+    // Search for img tags containing 'logo' or 'brand'
+    const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+    let match;
+    const logoCandidates: string[] = [];
+    while ((match = imgRegex.exec(html)) !== null) {
+      const src = match[1];
+      const fullTag = match[0];
+      if (src && (src.toLowerCase().includes("logo") || fullTag.toLowerCase().includes("logo") || fullTag.toLowerCase().includes("brand"))) {
+        logoCandidates.push(src);
+      }
+    }
 
     const resolveUrl = (baseUrl: string, targetPath: string) => {
       if (!targetPath) return "";
@@ -71,16 +85,104 @@ async function fetchWebsiteMetadata(url: string) {
       }
     };
 
+    let bestLogo = "";
+    if (logoCandidates.length > 0) {
+      for (const cand of logoCandidates) {
+        const resolved = resolveUrl(url, cand);
+        if (resolved) {
+          bestLogo = resolved;
+          break;
+        }
+      }
+    }
+
+    if (!bestLogo && appleTouchIcon) {
+      bestLogo = resolveUrl(url, appleTouchIcon);
+    }
+    if (!bestLogo && ogImage) {
+      bestLogo = resolveUrl(url, ogImage);
+    }
+    if (!bestLogo && favicon) {
+      bestLogo = resolveUrl(url, favicon);
+    }
+    if (!bestLogo) {
+      bestLogo = resolveUrl(url, "/favicon.ico");
+    }
+
     return {
       title: ogTitle || title,
       description,
       ogImage: resolveUrl(url, ogImage),
       favicon: resolveUrl(url, favicon),
-      canonical: resolveUrl(url, canonical)
+      canonical: resolveUrl(url, canonical),
+      bestLogo: resolveUrl(url, bestLogo)
     };
   } catch (error) {
     functions.logger.warn(`Failed to fetch metadata from ${url}:`, error);
     return {};
+  }
+}
+
+/**
+ * Uploads a remote file/image URL directly to Cloudinary using secure server-side signing.
+ */
+async function uploadUrlToCloudinary(imageUrl: string, folder: string): Promise<string | null> {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+
+  if (!cloudName || !apiKey || !apiSecret) {
+    functions.logger.warn("Cloudinary configuration is missing on the server. Skipping upload.");
+    return null;
+  }
+
+  try {
+    const timestamp = Math.round(Date.now() / 1000);
+    const paramsToSign = {
+      folder: folder,
+      timestamp: timestamp
+    };
+
+    const sortedParams = Object.keys(paramsToSign)
+      .sort()
+      .map((key) => `${key}=${(paramsToSign as any)[key]}`)
+      .join("&");
+
+    const signature = crypto
+      .createHash("sha1")
+      .update(sortedParams + apiSecret)
+      .digest("hex");
+
+    const formData = new URLSearchParams();
+    formData.append("file", imageUrl);
+    formData.append("folder", folder);
+    formData.append("timestamp", timestamp.toString());
+    formData.append("api_key", apiKey);
+    formData.append("signature", signature);
+
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+      method: "POST",
+      body: formData,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      functions.logger.warn(`Cloudinary upload failed with status ${response.status}: ${errorText}`);
+      return null;
+    }
+
+    const json = await response.json() as any;
+    if (json && json.secure_url) {
+      functions.logger.info(`Successfully uploaded logo to Cloudinary: ${json.secure_url}`);
+      return json.secure_url;
+    }
+    return null;
+  } catch (error) {
+    functions.logger.error("Error uploading image to Cloudinary from server:", error);
+    return null;
   }
 }
 
@@ -124,9 +226,19 @@ export const generateCasinoContent = functions.https.onCall(async (data, context
   functions.logger.info(`Extracting metadata for URL: ${affiliateLink}`);
   const metadata = await fetchWebsiteMetadata(affiliateLink);
 
-  // Determine Logo Status
-  const logoUrl = metadata.favicon || metadata.ogImage || "";
-  const logoStatus = logoUrl ? "found" : "missing";
+  // Determine Logo Status and upload to Cloudinary
+  const logoUrl = metadata.bestLogo || metadata.favicon || metadata.ogImage || "";
+  let finalLogoUrl = logoUrl;
+  let logoStatus = logoUrl ? "found" : "missing";
+
+  if (logoUrl) {
+    functions.logger.info(`Uploading extracted website logo ${logoUrl} to Cloudinary...`);
+    const uploadedLogo = await uploadUrlToCloudinary(logoUrl, "casino-listings/logos");
+    if (uploadedLogo) {
+      finalLogoUrl = uploadedLogo;
+      logoStatus = "found";
+    }
+  }
 
   // 4. Invoke Gemini 2.5 Flash via @google/genai SDK (Step 3)
   const apiKey = process.env.GEMINI_API_KEY;
@@ -269,7 +381,7 @@ ${geminiOutput.faq.map((item: any) => `### Q: ${item.question}\n${item.answer}`)
     slug: suggestedSlug,
     affiliateLink,
     casinoName: geminiOutput.casinoName,
-    casinoLogo: logoUrl,
+    casinoLogo: finalLogoUrl,
     logoStatus,
     bannerImage: bannerImage || "",
     shortDescription: geminiOutput.shortDescription,
@@ -339,3 +451,68 @@ ${geminiOutput.faq.map((item: any) => `### Q: ${item.question}\n${item.answer}`)
     generatedData: geminiOutput
   };
 });
+
+/**
+ * Callable function to crawl website brand name and brand logo on-demand.
+ * Used during manual creation or live preview of website assets.
+ */
+export const crawlWebsiteLogoAndName = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Authentication is required.");
+  }
+
+  const { affiliateLink } = data;
+  if (!affiliateLink) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing required affiliateLink parameter.");
+  }
+
+  if (!isValidUrl(affiliateLink)) {
+    throw new functions.https.HttpsError("invalid-argument", "The provided affiliate link is not a valid HTTP or HTTPS URL.");
+  }
+
+  functions.logger.info(`On-demand asset crawling requested for URL: ${affiliateLink}`);
+  const metadata = await fetchWebsiteMetadata(affiliateLink);
+
+  // Extract clean name from title
+  let name = metadata.title || "";
+  if (name) {
+    // Standard cleaning of titles: "Brand Name | Best Online Casino" -> "Brand Name"
+    if (name.includes("|")) {
+      name = name.split("|")[0].trim();
+    } else if (name.includes("-")) {
+      name = name.split("-")[0].trim();
+    } else if (name.includes("–")) {
+      name = name.split("–")[0].trim();
+    }
+  }
+
+  // Fallback to hostname if title is empty
+  if (!name) {
+    try {
+      const urlObj = new URL(affiliateLink);
+      const host = urlObj.hostname.replace("www.", "");
+      const part = host.split(".")[0];
+      name = part.charAt(0).toUpperCase() + part.slice(1);
+    } catch {
+      name = "New Casino";
+    }
+  }
+
+  const logoUrl = metadata.bestLogo || metadata.favicon || metadata.ogImage || "";
+  let finalLogoUrl = logoUrl;
+
+  if (logoUrl) {
+    functions.logger.info(`Uploading on-demand extracted website logo ${logoUrl} to Cloudinary...`);
+    const uploadedLogo = await uploadUrlToCloudinary(logoUrl, "casino-listings/logos");
+    if (uploadedLogo) {
+      finalLogoUrl = uploadedLogo;
+    }
+  }
+
+  return {
+    success: true,
+    name,
+    logoUrl: finalLogoUrl
+  };
+});
+
