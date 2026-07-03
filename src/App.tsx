@@ -9,7 +9,7 @@ import {
   Link 
 } from "react-router-dom";
 import { db, auth, handleFirestoreError, OperationType } from "./firebase";
-import { onAuthStateChanged, User } from "firebase/auth";
+import { onAuthStateChanged, User, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import {
   collection,
   onSnapshot,
@@ -34,14 +34,26 @@ import {
   Share2,
   Home,
   Search,
+  BookOpen,
+  Mail,
+  ShieldCheck,
+  ChevronDown,
+  LayoutDashboard,
+  Menu,
+  Bell,
+  User as UserIcon,
 } from "lucide-react";
-import { AffiliateLink, UserProfile } from "./types";
+import { AffiliateLink, UserProfile, AppNotification } from "./types";
 import AdminPanel from "./components/AdminPanel";
 import DealsGrid from "./components/DealsGrid";
 import DealModal from "./components/DealModal";
 import CasinoDetails from "./components/CasinoDetails";
 import HomeView from "./components/home/HomeView";
 import { JackpotListing } from "./components/JackpotListing";
+import BlogView from "./components/BlogView";
+import ContactView from "./components/ContactView";
+import UserProfileView from "./components/UserProfileView";
+import { AdminSidebar } from "./components/admin/AdminSidebar";
 
 // Predefined demo fallbacks if DB has no links yet, keeping the site looking magnificent
 const DEMO_PRESETS = [
@@ -114,9 +126,50 @@ function AppContent() {
   const [selectedDeal, setSelectedDeal] = useState<AffiliateLink | null>(null);
   const [loading, setLoading] = useState(true);
   const [copiedShareLink, setCopiedShareLink] = useState(false);
+  const [adminHeaderTitle, setAdminHeaderTitle] = useState("Admin Workspace");
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
+  const [isSidebarOpenMobileGlobal, setIsSidebarOpenMobileGlobal] = useState(false);
+
+  useEffect(() => {
+    const handleToggle = () => {
+      setIsSidebarOpenMobileGlobal((prev) => !prev);
+    };
+    window.addEventListener("toggle-admin-sidebar", handleToggle);
+    return () => {
+      window.removeEventListener("toggle-admin-sidebar", handleToggle);
+    };
+  }, []);
+
+  const handleMarkNotificationAsRead = async (id: string) => {
+    try {
+      await updateDoc(doc(db, "notifications", id), { read: true });
+    } catch (err) {
+      console.warn("Could not mark notification as read:", err);
+    }
+  };
+
+  const handleMarkAllNotificationsAsRead = async () => {
+    const unread = notifications.filter((n) => !n.read);
+    for (const notif of unread) {
+      try {
+        await updateDoc(doc(db, "notifications", notif.id), { read: true });
+      } catch (err) {
+        console.warn("Could not mark all notifications as read:", err);
+      }
+    }
+  };
 
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+
+  // Admin user condition check
+  const isAdmin = useMemo(() => {
+    if (!currentUser) return false;
+    if (currentUser.email === "aminulhoqueanik@gmail.com") return true;
+    const role = currentUserProfile?.role;
+    return role === "admin" || role === "super_admin" || role === "moderator";
+  }, [currentUser, currentUserProfile]);
 
   // 1. Sync search parameters on load (supporting ?u=... legacy routing seamlessly)
   useEffect(() => {
@@ -135,7 +188,19 @@ function AppContent() {
           const profileRef = doc(db, "users", user.uid);
           const snap = await getDoc(profileRef);
           if (snap.exists()) {
-            setCurrentUserProfile({ uid: user.uid, ...snap.data() } as UserProfile);
+            const data = snap.data();
+            const isBootstrapAdmin = user.email === "aminulhoqueanik@gmail.com";
+            if (isBootstrapAdmin && data.role !== "admin" && data.role !== "super_admin") {
+              const updatedProfile = {
+                ...data,
+                role: "admin",
+                updatedAt: new Date().toISOString()
+              };
+              await setDoc(profileRef, updatedProfile, { merge: true });
+              setCurrentUserProfile({ uid: user.uid, ...updatedProfile } as unknown as UserProfile);
+            } else {
+              setCurrentUserProfile({ uid: user.uid, ...data } as UserProfile);
+            }
           } else {
             const isBootstrapAdmin = user.email === "aminulhoqueanik@gmail.com";
             const tempProfile: Omit<UserProfile, "uid"> = {
@@ -165,6 +230,32 @@ function AppContent() {
     return unsubscribe;
   }, []);
 
+  // Auto Google Login trigger on website load
+  useEffect(() => {
+    const triggerAutoLogin = async () => {
+      // Small graceful delay to let resources load first
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      
+      const hasPrompted = sessionStorage.getItem("hasAutoPromptedGoogleLogin");
+      if (!auth.currentUser && !hasPrompted) {
+        sessionStorage.setItem("hasAutoPromptedGoogleLogin", "true");
+        try {
+          const provider = new GoogleAuthProvider();
+          provider.setCustomParameters({ prompt: "select_account" });
+          await signInWithPopup(auth, provider);
+        } catch (err: any) {
+          console.warn("Auto Google login popup dismissed or closed:", err);
+        }
+      }
+    };
+    
+    // Avoid triggering if we are already on the login page or admin tab to prevent UX disruption
+    const path = window.location.pathname;
+    if (path === "/" || path === "") {
+      triggerAutoLogin();
+    }
+  }, []);
+
   // 3. Fetch Selected URL Creator Profile
   useEffect(() => {
     if (urlCreatorId) {
@@ -184,6 +275,27 @@ function AppContent() {
       setMatchedCreatorProfile(null);
     }
   }, [urlCreatorId]);
+
+  // Real-time sync notifications list for current user
+  useEffect(() => {
+    if (!currentUser) {
+      setNotifications([]);
+      return;
+    }
+    const q = query(collection(db, "notifications"), where("userId", "==", currentUser.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const items: AppNotification[] = [];
+      snapshot.forEach((doc) => {
+        items.push({ id: doc.id, ...doc.data() } as AppNotification);
+      });
+      // Sort notifications by createdAt descending
+      items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      setNotifications(items);
+    }, (error) => {
+      console.warn("Error listening to notifications:", error);
+    });
+    return unsubscribe;
+  }, [currentUser]);
 
   // 4. Real-time sync links list
   useEffect(() => {
@@ -339,85 +451,259 @@ function AppContent() {
   }, [matchedCreatorProfile, currentUserProfile, urlCreatorId]);
 
   // Universal layout helper
-  const renderLayout = (content: React.ReactNode, hideHeader = false, hideFooter = false) => {
-    return (
-      <div className="min-h-screen bg-slate-50/50 text-slate-800 font-sans antialiased flex flex-col justify-between">
-        {!hideHeader && (
-          <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-100">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-              <Link to="/" className="flex items-center gap-2">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md">
-                  <Coins className="h-5 w-5" />
-                </div>
-                <div>
-                  <span className="font-sans font-black text-base tracking-tight text-slate-900 leading-none block">
-                    Eker Listings
-                  </span>
-                  <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-indigo-600 block mt-0.5">
-                    Verified Casino Broker
-                  </span>
-                </div>
-              </Link>
+  const renderLayout = (content: React.ReactNode, hideHeader = false, hideFooter = false, isFullWidth = false) => {
+    const showGlobalSidebar = currentUser && isAdmin && !window.location.pathname.startsWith("/admin");
 
-              <div className="flex items-center gap-3">
-                {currentUser && (
-                  <div className="flex items-center gap-2 border-r border-slate-200 pr-3 hidden md:flex">
-                    {currentUser.photoURL ? (
-                      <img
-                        id="user-avatar-img"
-                        src={currentUser.photoURL}
-                        alt={currentUser.displayName || "User"}
-                        referrerPolicy="no-referrer"
-                        className="h-8 w-8 rounded-full border border-slate-200 shadow-xs"
-                      />
-                    ) : (
-                      <div className="h-8 w-8 rounded-full bg-indigo-50 text-indigo-800 flex items-center justify-center text-xs font-bold font-mono border border-indigo-200 shadow-xs">
-                        {(currentUser.displayName || currentUser.email || "?")[0].toUpperCase()}
-                      </div>
-                    )}
-                    <div className="text-left leading-tight">
-                      <div className="text-xs font-bold text-slate-800 max-w-[120px] truncate">
-                        {(currentUserProfile as any)?.displayName || currentUser.displayName || "Creator Admin"}
-                      </div>
-                      <div className="text-[10px] text-slate-400 max-w-[120px] truncate">
-                        {currentUser.email || "Sandbox Owner"}
-                      </div>
-                    </div>
+    const innerLayout = (
+      <>
+        {!hideHeader && (
+          <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-100 shrink-0">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {/* Hamburger menu for Admin Sidebar on Mobile */}
+                {currentUser && isAdmin && (
+                  <button
+                    onClick={() => window.dispatchEvent(new Event('toggle-admin-sidebar'))}
+                    className="md:hidden p-2 -ml-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                    aria-label="Open Admin Menu"
+                  >
+                    <Menu className="w-5 h-5" />
+                  </button>
+                )}
+
+                <Link to="/" className="flex items-center gap-2">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md">
+                    <Coins className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <span className="font-sans font-black text-base tracking-tight text-slate-900 leading-none block">
+                      Eker Listings
+                    </span>
+                    <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-indigo-600 block mt-0.5">
+                      {window.location.pathname.startsWith("/admin") ? "Admin Workspace" : "Verified Casino Broker"}
+                    </span>
+                  </div>
+                </Link>
+
+                {/* Show the active admin page tab title on desktop next to logo */}
+                {window.location.pathname.startsWith("/admin") && (
+                  <div className="hidden md:flex items-center gap-2 ml-4 pl-4 border-l border-slate-200">
+                    <span className="text-xs font-bold text-slate-650 bg-slate-100 px-3 py-1 rounded-lg">
+                      {adminHeaderTitle}
+                    </span>
                   </div>
                 )}
 
-                <button
-                  id="header-share-portal-btn"
-                  onClick={handleCopyPortalShare}
-                  className="hidden sm:flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-3 rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-                >
-                  {copiedShareLink ? (
-                    <>
-                      <Check className="h-4 w-4 text-emerald-600" />
-                      <span className="text-emerald-700 font-bold">Copied!</span>
-                    </>
+                {/* Desktop horizontal navigation links (Main Menu) */}
+                <nav className="hidden md:flex items-center gap-6 ml-8 font-sans">
+                  <Link
+                    to="/"
+                    className={`text-xs font-bold transition-all ${
+                      window.location.pathname === "/"
+                        ? "text-indigo-600 border-b-2 border-indigo-600 pb-1"
+                        : "text-slate-500 hover:text-slate-900"
+                    }`}
+                  >
+                    Home
+                  </Link>
+
+                  <button
+                    onClick={() => {
+                      navigate("/");
+                      setTimeout(() => {
+                        const searchInput = document.getElementById("hero-search");
+                        if (searchInput) {
+                          searchInput.focus();
+                          searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                      }, 200);
+                    }}
+                    className="text-xs font-bold text-slate-500 hover:text-slate-900 cursor-pointer"
+                  >
+                    Search
+                  </button>
+
+                  <Link
+                    to="/blog"
+                    className={`text-xs font-bold transition-all ${
+                      window.location.pathname === "/blog"
+                        ? "text-indigo-600 border-b-2 border-indigo-600 pb-1"
+                        : "text-slate-500 hover:text-slate-900"
+                    }`}
+                  >
+                    Blog
+                  </Link>
+
+                  {/* Conditions based on user role and authentication status */}
+                  {currentUser && isAdmin ? (
+                    <Link
+                      to="/admin"
+                      className={`text-xs font-bold transition-all ${
+                        window.location.pathname.startsWith("/admin")
+                          ? "text-indigo-600 border-b-2 border-indigo-600 pb-1"
+                          : "text-slate-500 hover:text-slate-900"
+                      }`}
+                    >
+                      Creator Portal
+                    </Link>
                   ) : (
                     <>
-                      <Share2 className="h-4 w-4" />
-                      <span>Share Portal</span>
+                      <Link
+                        to="/contact"
+                        className={`text-xs font-bold transition-all ${
+                          window.location.pathname === "/contact"
+                            ? "text-indigo-600 border-b-2 border-indigo-600 pb-1"
+                            : "text-slate-500 hover:text-slate-900"
+                        }`}
+                      >
+                        Contact Us
+                      </Link>
+
+                      {currentUser && (
+                        <Link
+                          to="/profile"
+                          className={`text-xs font-bold transition-all ${
+                            window.location.pathname === "/profile"
+                              ? "text-indigo-600 border-b-2 border-indigo-600 pb-1"
+                              : "text-slate-500 hover:text-slate-900"
+                          }`}
+                        >
+                          Profile
+                        </Link>
+                      )}
                     </>
                   )}
-                </button>
+                </nav>
+              </div>
 
-                <button
-                  id="header-admin-toggle-btn"
-                  onClick={() => navigate(currentUser ? "/admin" : "/login")}
-                  className="hidden sm:flex items-center gap-1.5 py-2 px-3.5 rounded-xl text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
-                >
-                  <Settings2 className="h-4 w-4" />
-                  <span>Creator Portal</span>
-                </button>
+              <div className="flex items-center gap-3">
+                {currentUser ? (
+                  <>
+                    {/* Real-time Notification Bell Icon & Dropdown */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowNotificationDropdown(!showNotificationDropdown)}
+                        className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl relative transition cursor-pointer border border-slate-100 bg-white shadow-xs"
+                        aria-label="Toggle notifications"
+                      >
+                        <Bell className="w-4 h-4 text-slate-500" />
+                        {notifications.filter(n => !n.read).length > 0 && (
+                          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full animate-pulse ring-2 ring-white" />
+                        )}
+                      </button>
+
+                      {showNotificationDropdown && (
+                        <>
+                          <div 
+                            className="fixed inset-0 z-40" 
+                            onClick={() => setShowNotificationDropdown(false)} 
+                          />
+                          <div className="absolute right-0 mt-2 w-72 md:w-80 rounded-2xl bg-white border border-slate-150 shadow-xl z-50 p-2 text-left animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
+                              <span className="text-xs font-bold text-slate-900">Notifications ({notifications.filter(n => !n.read).length})</span>
+                              {notifications.filter(n => !n.read).length > 0 && (
+                                <button
+                                  onClick={() => {
+                                    handleMarkAllNotificationsAsRead();
+                                    setShowNotificationDropdown(false);
+                                  }}
+                                  className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer"
+                                >
+                                  Mark all as read
+                                </button>
+                              )}
+                            </div>
+                            <div className="max-h-60 overflow-y-auto py-1 divide-y divide-slate-50">
+                              {notifications.length === 0 ? (
+                                <div className="px-3 py-6 text-center text-xs text-slate-400 italic">
+                                  No notifications found
+                                </div>
+                              ) : (
+                                notifications.map((notif) => (
+                                  <div
+                                    key={notif.id}
+                                    onClick={async () => {
+                                      await handleMarkNotificationAsRead(notif.id);
+                                      setShowNotificationDropdown(false);
+                                    }}
+                                    className={`p-3 text-xs cursor-pointer hover:bg-slate-50/80 transition-colors flex gap-2.5 rounded-xl ${!notif.read ? 'bg-indigo-50/30' : ''}`}
+                                  >
+                                    <div className="mt-0.5 shrink-0">
+                                      <span className={`w-2 h-2 rounded-full inline-block ${!notif.read ? 'bg-indigo-500' : 'bg-slate-300'}`} />
+                                    </div>
+                                    <div className="space-y-0.5">
+                                      <p className="font-bold text-slate-800 leading-tight">{notif.title}</p>
+                                      <p className="text-slate-550 text-[11px] leading-snug">{notif.message}</p>
+                                      <p className="text-[9px] font-mono text-slate-400 mt-1">
+                                        {notif.createdAt ? new Date(notif.createdAt).toLocaleDateString() : 'Just now'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Google profile avatar & details - Clicking routes to /profile or /admin */}
+                    <Link 
+                      to={isAdmin ? "/admin" : "/profile"}
+                      className="flex items-center gap-2 border-r border-slate-200 pr-3 hover:opacity-85 transition-opacity"
+                    >
+                      {currentUserProfile?.photoURL || currentUser.photoURL ? (
+                        <img
+                          id="user-avatar-img"
+                          src={currentUserProfile?.photoURL || currentUser.photoURL}
+                          alt={currentUserProfile?.displayName || currentUser.displayName || "User"}
+                          referrerPolicy="no-referrer"
+                          className="h-8 w-8 rounded-full border border-slate-200 shadow-xs object-cover"
+                        />
+                      ) : (
+                        <div className="h-8 w-8 rounded-full bg-indigo-50 text-indigo-800 flex items-center justify-center text-xs font-bold font-mono border border-indigo-200 shadow-xs">
+                          {(currentUserProfile?.displayName || currentUser.displayName || currentUser.email || "?")[0].toUpperCase()}
+                        </div>
+                      )}
+                      
+                      <div className="hidden md:block text-left leading-tight">
+                        <div className="text-xs font-bold text-slate-800 max-w-[120px] truncate">
+                          {currentUserProfile?.displayName || currentUser.displayName || "Eker User"}
+                        </div>
+                        <div className="text-[10px] text-slate-400 max-w-[120px] truncate">
+                          {currentUser.email}
+                        </div>
+                      </div>
+                    </Link>
+                  </>
+                ) : (
+                  /* Premium Google Sign-In Button shown when logged out */
+                  <button
+                    onClick={async () => {
+                      try {
+                        const provider = new GoogleAuthProvider();
+                        provider.setCustomParameters({ prompt: "select_account" });
+                        await signInWithPopup(auth, provider);
+                      } catch (err) {
+                        console.error("Manual Google login failed:", err);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-3.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-97 shrink-0"
+                  >
+                    <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24">
+                      <path d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.113-5.111 4.113-3.414 0-6.173-2.76-6.173-6.173s2.76-6.173 6.173-6.173c1.55 0 2.964.57 4.053 1.503l3.05-3.048C19.317 2.115 16.035 1 12.24 1s-8.1 4.385-8.1 9.285 4.385 9.285 8.1 9.285c7.34 0 8.16-5.83 8.16-8.285h-8.16z"/>
+                    </svg>
+                    <span>Login with Google</span>
+                  </button>
+                )}
+
+
               </div>
             </div>
           </header>
         )}
 
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 md:pb-8">
+        <main className={isFullWidth ? "flex-1 w-full flex overflow-hidden bg-slate-50" : "flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 md:pb-8"}>
           {content}
         </main>
 
@@ -426,6 +712,21 @@ function AppContent() {
             <div className="flex items-center justify-center gap-1">
               <Heart className="h-3.5 w-3.5 text-rose-500 fill-rose-500" />
               <span>Powered securely with RefDirect Cloud-run Broker</span>
+            </div>
+
+            {/* Direct quick footer links including Administration Login */}
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px] font-bold text-slate-400">
+              <Link to="/admin" className="hover:text-indigo-600 transition-colors">
+                Administration Login
+              </Link>
+              <span className="text-slate-200">|</span>
+              <Link to="/blog" className="hover:text-indigo-600 transition-colors">
+                Chronicle Blog
+              </Link>
+              <span className="text-slate-200">|</span>
+              <Link to="/contact" className="hover:text-indigo-600 transition-colors">
+                Support Desk
+              </Link>
             </div>
 
             {!urlCreatorId && currentUserProfile && (
@@ -445,7 +746,7 @@ function AppContent() {
 
         <DealModal deal={selectedDeal} onClose={() => setSelectedDeal(null)} onGoToLink={handleGoToLink} />
 
-        {/* Mobile Bottom Navigation - Super Premium & Prime FAB submission */}
+        {/* Mobile Bottom Navigation - Elegant Tab bar */}
         {!hideHeader && (
           <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-150 h-16 flex md:hidden items-center justify-around px-2 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] pb-safe">
             <Link
@@ -476,27 +777,75 @@ function AppContent() {
               <span>Search</span>
             </button>
 
-            <button
-              id="mobile-screenshot-modal-btn"
-              onClick={() => {
-                window.dispatchEvent(new Event('open-screenshot-modal'));
-              }}
-              className="flex flex-col items-center justify-center -mt-5 bg-gradient-to-tr from-indigo-600 to-indigo-700 text-white h-12 w-12 rounded-full shadow-lg hover:from-indigo-500 hover:to-indigo-650 transition-all border-4 border-white cursor-pointer transform hover:scale-105 active:scale-95"
-            >
-              <Sparkles className="h-5 w-5 animate-pulse" />
-            </button>
-
             <Link
-              to="/admin"
+              to="/blog"
               className={`flex flex-col items-center justify-center gap-1 text-[10px] font-bold ${
-                window.location.pathname.startsWith('/admin') || window.location.pathname.startsWith('/login') ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-700'
+                window.location.pathname === '/blog' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-700'
               } transition-colors`}
             >
-              <Settings2 className="h-5 w-5" />
-              <span>Creator</span>
+              <BookOpen className="h-5 w-5" />
+              <span>Blog</span>
             </Link>
+
+            {currentUser && isAdmin ? (
+              <Link
+                to="/admin"
+                className={`flex flex-col items-center justify-center gap-1 text-[10px] font-bold ${
+                  window.location.pathname.startsWith('/admin') ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-700'
+                } transition-colors`}
+              >
+                <LayoutDashboard className="h-5 w-5" />
+                <span>Creator</span>
+              </Link>
+            ) : (
+              <Link
+                to="/contact"
+                className={`flex flex-col items-center justify-center gap-1 text-[10px] font-bold ${
+                  window.location.pathname === '/contact' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-700'
+                } transition-colors`}
+              >
+                <Mail className="h-5 w-5" />
+                <span>Contact Us</span>
+              </Link>
+            )}
           </nav>
         )}
+      </>
+    );
+
+    if (showGlobalSidebar) {
+      return (
+        <div className="min-h-screen bg-slate-50/50 text-slate-800 font-sans antialiased flex">
+          {/* Global Admin Sidebar */}
+          <AdminSidebar
+            currentTab=""
+            onTabChange={(tab) => {
+              navigate(`/admin?tab=${tab}`);
+              setIsSidebarOpenMobileGlobal(false);
+            }}
+            onLogout={async () => {
+              try {
+                await auth.signOut();
+                navigate("/");
+              } catch (err) {
+                console.error("Signout error:", err);
+              }
+            }}
+            isOpenMobile={isSidebarOpenMobileGlobal}
+            onCloseMobile={() => setIsSidebarOpenMobileGlobal(false)}
+          />
+
+          {/* Right side container containing Header, Main, Footer */}
+          <div className="flex-1 flex flex-col justify-between overflow-hidden">
+            {innerLayout}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className={isFullWidth ? "h-screen flex flex-col overflow-hidden bg-slate-50/50 text-slate-800 font-sans antialiased" : "min-h-screen bg-slate-50/50 text-slate-800 font-sans antialiased flex flex-col justify-between"}>
+        {innerLayout}
       </div>
     );
   };
@@ -517,17 +866,51 @@ function AppContent() {
         true
       )} />
 
-      {/* 2. DETAILED LANDING OVERVIEW PAGE (Task 2) */}
+      {/* 2. DETAILED LANDING OVERVIEW PAGE */}
       <Route path="/casino/:slug" element={renderLayout(
         <CasinoDetails deals={allDeals} onGoToLink={handleGoToLink} />,
         false,
         true
       )} />
 
+      {/* Blog view */}
+      <Route path="/blog" element={renderLayout(
+        <BlogView />,
+        false,
+        true
+      )} />
+
+      {/* Contact view */}
+      <Route path="/contact" element={renderLayout(
+        <ContactView />,
+        false,
+        true
+      )} />
+
+      {/* Normal authenticated user Profile view */}
+      <Route path="/profile" element={
+        currentUser ? (
+          renderLayout(
+            <UserProfileView
+              currentUser={currentUser}
+              userProfile={currentUserProfile}
+            />,
+            false,
+            true
+          )
+        ) : (
+          <Navigate to="/login" replace />
+        )
+      } />
+
       {/* 3. SECURE AUTHORIZED GATE */}
       <Route path="/login" element={
         currentUser ? (
-          <Navigate to="/admin" replace />
+          isAdmin ? (
+            <Navigate to="/admin" replace />
+          ) : (
+            <Navigate to="/profile" replace />
+          )
         ) : (
           renderLayout(
             <div className="flex items-center justify-center py-10">
@@ -548,15 +931,25 @@ function AppContent() {
       {/* 4. MASTER ADMIN DESKTOP WORKSPACE */}
       <Route path="/admin" element={
         currentUser ? (
-          <AdminPanel
-            deals={allDeals.filter(deal => currentUser && deal.userId === currentUser.uid)}
-            onAddDeal={handleAddDeal}
-            onUpdateDeal={handleUpdateDeal}
-            onDeleteDeal={handleDeleteDeal}
-            currentUser={currentUser}
-            userProfile={currentUserProfile}
-            onUpdateProfile={handleUpdateProfile}
-          />
+          isAdmin ? (
+            renderLayout(
+              <AdminPanel
+                deals={allDeals}
+                onAddDeal={handleAddDeal}
+                onUpdateDeal={handleUpdateDeal}
+                onDeleteDeal={handleDeleteDeal}
+                currentUser={currentUser}
+                userProfile={currentUserProfile}
+                onUpdateProfile={handleUpdateProfile}
+                onActiveTabTitleChange={setAdminHeaderTitle}
+              />,
+              false,
+              true,
+              true
+            )
+          ) : (
+            <Navigate to="/profile" replace />
+          )
         ) : (
           <Navigate to="/login" replace />
         )

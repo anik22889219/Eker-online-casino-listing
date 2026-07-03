@@ -23,6 +23,7 @@ import {
   Sparkles,
   Loader2,
   CheckCircle,
+  ShieldCheck,
   Settings as SettingsIcon,
   Users as UsersIcon,
 } from "lucide-react";
@@ -51,6 +52,7 @@ interface AdminPanelProps {
   currentUser: User | null;
   userProfile: UserProfile | null;
   onUpdateProfile: (profile: any) => Promise<void>;
+  onActiveTabTitleChange?: (title: string) => void;
 }
 
 export default function AdminPanel({
@@ -61,10 +63,51 @@ export default function AdminPanel({
   currentUser,
   userProfile,
   onUpdateProfile,
+  onActiveTabTitleChange,
 }: AdminPanelProps) {
   // Navigation tabs: overview, casinos, sell-requests, links, analytics, profile, settings, users
-  const [activeTab, setActiveTab] = useState<string>("overview");
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("tab") || "overview";
+  });
   const [isSidebarOpenMobile, setIsSidebarOpenMobile] = useState<boolean>(false);
+  const [reviewSubTab, setReviewSubTab] = useState<"moderation" | "submit">("moderation");
+
+  // Sync tab from URL changes
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab");
+      if (tabParam && tabParam !== activeTab) {
+        setActiveTab(tabParam);
+      }
+    };
+    window.addEventListener("popstate", handleUrlChange);
+    // Also poll search params since React Router might not trigger standard popstate on search changes
+    const interval = setInterval(handleUrlChange, 500);
+    return () => {
+      window.removeEventListener("popstate", handleUrlChange);
+      clearInterval(interval);
+    };
+  }, [activeTab]);
+
+  // Handle mobile sidebar toggle event from parent header
+  useEffect(() => {
+    const handleToggle = () => {
+      setIsSidebarOpenMobile((prev) => !prev);
+    };
+    window.addEventListener("toggle-admin-sidebar", handleToggle);
+    return () => {
+      window.removeEventListener("toggle-admin-sidebar", handleToggle);
+    };
+  }, []);
+
+  // Update parent header title when tab changes
+  useEffect(() => {
+    if (onActiveTabTitleChange) {
+      onActiveTabTitleChange(getHeaderTitle());
+    }
+  }, [activeTab, onActiveTabTitleChange]);
 
   // Real-time directory statistics state
   const [stats, setStats] = useState({
@@ -563,8 +606,7 @@ export default function AdminPanel({
       case 'overview': return 'Command Center Dashboard';
       case 'casinos': return 'Casino Listings Asset Manager';
       case 'bonuses': return 'Promo Campaign & Bonuses Manager';
-      case 'moderation': return 'Vetting Desk & Moderation';
-      case 'jackpot-listing': return 'Submit Jackpot Proof';
+      case 'review-submission': return 'Review Submission';
       case 'casino-analytics': return 'Casino Conversion Analytics';
       case 'sell-requests': return 'Affiliate Sell Requests';
       case 'links': return 'Affiliate Offers';
@@ -578,12 +620,14 @@ export default function AdminPanel({
 
   // FULL COMPREHENSIVE FOUNDATION LAYOUT (Task 11)
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 font-sans">
+    <div className="flex h-full w-full overflow-hidden bg-slate-50 font-sans">
       {/* Sidebar Layout */}
       <AdminSidebar
         currentTab={activeTab}
         onTabChange={(tab) => {
           setActiveTab(tab);
+          const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + "?tab=" + tab;
+          window.history.pushState({ path: newUrl }, "", newUrl);
           // Auto reset forms
           handleCancelEdit();
           setIsSidebarOpenMobile(false);
@@ -595,14 +639,6 @@ export default function AdminPanel({
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Universal Admin Header */}
-        <AdminHeader
-          userEmail={currentUser.email}
-          role={userProfile?.role === "admin" || userProfile?.role === "super_admin" ? "Administrator" : "Moderator"}
-          title={getHeaderTitle()}
-          onToggleSidebar={() => setIsSidebarOpenMobile(!isSidebarOpenMobile)}
-        />
-
         {/* Scrollable Panel Area */}
         <main className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6">
           {/* Quick Statistics (Task 11 Component integration - only on old links/analytics views) */}
@@ -751,9 +787,42 @@ export default function AdminPanel({
 
           {activeTab === "bonuses" && <BonusManager />}
 
-          {activeTab === "moderation" && <ModerationManager />}
+          {activeTab === "review-submission" && (
+            <div className="space-y-6">
+              {/* Inner Sub-Tabs Navigation for Review Submission */}
+              <div className="flex bg-white/80 p-1.5 rounded-2xl border border-slate-200 max-w-md shadow-xs">
+                <button
+                  onClick={() => setReviewSubTab("moderation")}
+                  className={`flex-1 px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    reviewSubTab === "moderation"
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  <span>Vetting Desk & Moderation</span>
+                </button>
+                <button
+                  onClick={() => setReviewSubTab("submit")}
+                  className={`flex-1 px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    reviewSubTab === "submit"
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  <Sparkles className="h-4 w-4" />
+                  <span>Submit Jackpot Proof</span>
+                </button>
+              </div>
 
-          {activeTab === "jackpot-listing" && <JackpotListing />}
+              {/* Component Views */}
+              {reviewSubTab === "moderation" ? (
+                <ModerationManager />
+              ) : (
+                <JackpotListing isAdmin={true} />
+              )}
+            </div>
+          )}
 
           {activeTab === "casino-analytics" && <CasinoAnalytics />}
 

@@ -122,13 +122,17 @@ export const WinnerGallery: React.FC<WinnerGalleryProps> = ({ casinos }) => {
               className="group overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xs hover:shadow-md transition duration-300"
             >
               {/* Screenshot Frame */}
-              <div className="relative h-44 w-full overflow-hidden bg-slate-950">
+              <div 
+                className="relative h-44 w-full overflow-hidden bg-slate-950 cursor-zoom-in group/img"
+                onClick={() => window.open(win.image, "_blank")}
+                title="Click to view full image"
+              >
                 <img
                   src={win.image}
                   alt={`Win screenshot at ${win.casinoName}`}
                   loading="lazy"
                   referrerPolicy="no-referrer"
-                  className="h-full w-full object-cover opacity-90 transition-transform duration-500 group-hover:scale-105"
+                  className="h-full w-full object-contain opacity-90 transition-transform duration-500 group-hover:scale-105"
                 />
                 
                 {/* Float Prize amount banner */}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { db } from "../../firebase";
 import {
   collection,
@@ -23,8 +23,25 @@ import {
   Check,
   Building2,
   Trophy,
+  List,
+  LayoutGrid,
 } from "lucide-react";
 import { Review, JackpotScreenshot, Casino } from "../../types/firestore";
+
+export interface UnifiedWinSlip {
+  id: string;
+  source: "jackpotScreenshots" | "reviews";
+  originalId: string;
+  casinoId: string;
+  image: string;
+  amount?: number;
+  approved: boolean;
+  uploadedBy: string;
+  uploadedAt: string;
+  title?: string;
+  comment?: string;
+  type: "jackpot" | "balance" | "direct";
+}
 
 export const ModerationManager: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"reviews" | "screenshots">("reviews");
@@ -32,6 +49,7 @@ export const ModerationManager: React.FC = () => {
   const [screenshots, setScreenshots] = useState<JackpotScreenshot[]>([]);
   const [casinos, setCasinos] = useState<Casino[]>([]);
   const [loading, setLoading] = useState(true);
+  const [screenshotsViewMode, setScreenshotsViewMode] = useState<"table" | "grid">("grid");
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -47,7 +65,7 @@ export const ModerationManager: React.FC = () => {
   const [actionLoading, setActionLoading] = useState(false);
 
   // Modal display states
-  const [selectedScreenshot, setSelectedScreenshot] = useState<JackpotScreenshot | null>(null);
+  const [selectedScreenshot, setSelectedScreenshot] = useState<UnifiedWinSlip | null>(null);
 
   useEffect(() => {
     // 1. Load casinos
@@ -108,6 +126,51 @@ export const ModerationManager: React.FC = () => {
   };
 
   // 1. Single Moderation actions
+  const handleUnifiedStatus = async (item: UnifiedWinSlip, approved: boolean) => {
+    setActionLoading(true);
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      const docRef = doc(db, item.source, item.originalId);
+      await updateDoc(docRef, { approved });
+      
+      setActionSuccess(`Jackpot screenshot proof has been successfully ${approved ? "approved" : "unapproved"}.`);
+
+      // Trigger notification
+      const prizeText = item.amount ? `$${item.amount.toLocaleString()}` : "Jackpot win proof";
+      await createNotification(
+        item.uploadedBy,
+        approved ? "Jackpot Winner Verified!" : "Jackpot Slide Flagged",
+        `Your winning screenshot of ${prizeText} has been ${approved ? "approved & shared in the gallery!" : "declined by moderation"}.`,
+        approved ? "screenshot_approved" : "screenshot_rejected"
+      );
+    } catch (err: any) {
+      console.error(err);
+      setActionError(err.message || "Failed to update screenshot status.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteUnified = async (item: UnifiedWinSlip) => {
+    const confirmMessage = item.source === "reviews"
+      ? "Permanently delete this user review & jackpot proof from the database?"
+      : "Permanently delete this player jackpot win record?";
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+    setActionLoading(true);
+    try {
+      await deleteDoc(doc(db, item.source, item.originalId));
+      setActionSuccess("Screenshot win-record deleted permanently.");
+      setSelectedIds(selectedIds.filter(selected => selected !== item.id));
+    } catch (err: any) {
+      setActionError(err.message || "Failed to delete record.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleReviewStatus = async (review: Review, approved: boolean) => {
     setActionLoading(true);
     setActionError(null);
@@ -133,31 +196,6 @@ export const ModerationManager: React.FC = () => {
     }
   };
 
-  const handleScreenshotStatus = async (screenshot: JackpotScreenshot, approved: boolean) => {
-    setActionLoading(true);
-    setActionError(null);
-    setActionSuccess(null);
-    try {
-      const docRef = doc(db, "jackpotScreenshots", screenshot.id);
-      await updateDoc(docRef, { approved });
-      
-      setActionSuccess(`Jackpot screenshot has been successfully ${approved ? "approved" : "unapproved"}.`);
-
-      // Trigger notification
-      await createNotification(
-        screenshot.uploadedBy,
-        approved ? "Jackpot Winner Verified!" : "Jackpot Slide Flagged",
-        `Your winning screenshot of $${screenshot.amount.toLocaleString()} has been ${approved ? "approved & shared in the gallery!" : "declined by moderation"}.`,
-        approved ? "screenshot_approved" : "screenshot_rejected"
-      );
-    } catch (err: any) {
-      console.error(err);
-      setActionError(err.message || "Failed to update screenshot status.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
   const handleDeleteReview = async (id: string) => {
     if (!window.confirm("Permanently delete this user review from database?")) {
       return;
@@ -169,22 +207,6 @@ export const ModerationManager: React.FC = () => {
       setSelectedIds(selectedIds.filter(selected => selected !== id));
     } catch (err: any) {
       setActionError(err.message || "Failed to delete review.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleDeleteScreenshot = async (id: string) => {
-    if (!window.confirm("Permanently delete this player jackpot win record?")) {
-      return;
-    }
-    setActionLoading(true);
-    try {
-      await deleteDoc(doc(db, "jackpotScreenshots", id));
-      setActionSuccess("Screenshot win-record deleted permanently.");
-      setSelectedIds(selectedIds.filter(selected => selected !== id));
-    } catch (err: any) {
-      setActionError(err.message || "Failed to delete record.");
     } finally {
       setActionLoading(false);
     }
@@ -214,13 +236,14 @@ export const ModerationManager: React.FC = () => {
         }
       } else {
         for (const id of selectedIds) {
-          const scr = screenshots.find((s) => s.id === id);
-          if (scr && !scr.approved) {
-            await updateDoc(doc(db, "jackpotScreenshots", id), { approved: true });
+          const item = unifiedScreenshots.find((s) => s.id === id);
+          if (item && !item.approved) {
+            await updateDoc(doc(db, item.source, item.originalId), { approved: true });
+            const prizeText = item.amount ? `$${item.amount.toLocaleString()}` : "Jackpot Proof";
             await createNotification(
-              scr.uploadedBy,
+              item.uploadedBy,
               "Winner Slip Approved!",
-              `Your jackpot screenshot has been approved!`,
+              `Your jackpot screenshot of ${prizeText} has been approved!`,
               "screenshot_approved"
             );
             count++;
@@ -254,9 +277,9 @@ export const ModerationManager: React.FC = () => {
         }
       } else {
         for (const id of selectedIds) {
-          const scr = screenshots.find((s) => s.id === id);
-          if (scr) {
-            await updateDoc(doc(db, "jackpotScreenshots", id), { approved: false });
+          const item = unifiedScreenshots.find((s) => s.id === id);
+          if (item) {
+            await updateDoc(doc(db, item.source, item.originalId), { approved: false });
             count++;
           }
         }
@@ -295,6 +318,50 @@ export const ModerationManager: React.FC = () => {
     setSelectedCasinoFilter("all");
   }, [activeTab]);
 
+  // Combine screenshots and reviews that have screenshots
+  const unifiedScreenshots: UnifiedWinSlip[] = useMemo(() => {
+    const list: UnifiedWinSlip[] = [];
+
+    // 1. Direct screenshots from jackpotScreenshots collection
+    screenshots.forEach((s) => {
+      list.push({
+        id: `direct_${s.id}`,
+        source: "jackpotScreenshots",
+        originalId: s.id,
+        casinoId: s.casinoId,
+        image: s.image,
+        amount: s.amount,
+        approved: s.approved,
+        uploadedBy: s.uploadedBy,
+        uploadedAt: s.uploadedAt,
+        type: "direct",
+      });
+    });
+
+    // 2. Screenshots uploaded via reviews
+    reviews.forEach((r) => {
+      if (r.jackpotScreenshot) {
+        list.push({
+          id: `rev_jp_${r.id}`,
+          source: "reviews",
+          originalId: r.id,
+          casinoId: r.casinoId,
+          image: r.jackpotScreenshot,
+          amount: undefined, // Reviews don't have explicit amounts, but they are win proofs
+          approved: r.approved,
+          uploadedBy: r.userId,
+          uploadedAt: r.createdAt,
+          title: r.title,
+          comment: r.comment,
+          type: "jackpot",
+        });
+      }
+    });
+
+    // Sort by uploadedAt / createdAt descending
+    return list.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+  }, [screenshots, reviews]);
+
   // Filters mapping
   const filteredReviews = reviews.filter((r) => {
     const matchedSearch =
@@ -310,18 +377,26 @@ export const ModerationManager: React.FC = () => {
     return matchedSearch && matchedStatus && matchedCasino;
   });
 
-  const filteredScreenshots = screenshots.filter((s) => {
-    const matchedSearch =
-      getCasinoName(s.casinoId).toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.amount.toString().includes(searchQuery);
-    const matchedStatus =
-      statusFilter === "all" ||
-      (statusFilter === "approved" && s.approved) ||
-      (statusFilter === "pending" && !s.approved);
-    const matchedCasino =
-      selectedCasinoFilter === "all" || s.casinoId === selectedCasinoFilter;
-    return matchedSearch && matchedStatus && matchedCasino;
-  });
+  const filteredScreenshots = useMemo(() => {
+    return unifiedScreenshots.filter((s) => {
+      const casinoName = getCasinoName(s.casinoId).toLowerCase();
+      const matchedSearch =
+        casinoName.includes(searchQuery.toLowerCase()) ||
+        (s.amount !== undefined && s.amount.toString().includes(searchQuery)) ||
+        (s.title !== undefined && s.title.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (s.comment !== undefined && s.comment.toLowerCase().includes(searchQuery.toLowerCase()));
+
+      const matchedStatus =
+        statusFilter === "all" ||
+        (statusFilter === "approved" && s.approved) ||
+        (statusFilter === "pending" && !s.approved);
+
+      const matchedCasino =
+        selectedCasinoFilter === "all" || s.casinoId === selectedCasinoFilter;
+
+      return matchedSearch && matchedStatus && matchedCasino;
+    });
+  }, [unifiedScreenshots, searchQuery, statusFilter, selectedCasinoFilter, casinos]);
 
   return (
     <div className="space-y-6">
@@ -382,12 +457,41 @@ export const ModerationManager: React.FC = () => {
             }`}
           >
             <ImageIcon className="h-4 w-4" />
-            <span>Win Slips ({screenshots.length})</span>
+            <span>Win Slips ({unifiedScreenshots.length})</span>
           </button>
         </div>
 
         {/* Global Controls Filter bar */}
         <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto md:justify-end">
+          {activeTab === "screenshots" && (
+            <div className="flex bg-slate-100 p-1 rounded-xl shrink-0">
+              <button
+                onClick={() => setScreenshotsViewMode("grid")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  screenshotsViewMode === "grid"
+                    ? "bg-white text-slate-900 shadow-xs"
+                    : "text-slate-500 hover:text-slate-900"
+                }`}
+                title="Grid Gallery View"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Grid</span>
+              </button>
+              <button
+                onClick={() => setScreenshotsViewMode("table")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  screenshotsViewMode === "table"
+                    ? "bg-white text-slate-900 shadow-xs"
+                    : "text-slate-500 hover:text-slate-900"
+                }`}
+                title="Table List View"
+              >
+                <List className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">List</span>
+              </button>
+            </div>
+          )}
+
           <div className="relative flex-1 md:w-60">
             <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">
               <Search className="h-4 w-4" />
@@ -601,6 +705,135 @@ export const ModerationManager: React.FC = () => {
               <h4 className="font-display font-extrabold text-sm text-slate-700">No jackpot screenshots found</h4>
               <p className="text-xs text-slate-500">Player uploaded jackpot slips awaiting vetting appear here.</p>
             </div>
+          ) : screenshotsViewMode === "grid" ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
+              {filteredScreenshots.map((scr) => (
+                <div 
+                  key={scr.id} 
+                  className={`bg-white border rounded-3xl overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between relative group ${
+                    scr.approved ? "border-slate-200" : "border-amber-200 bg-amber-50/5"
+                  }`}
+                >
+                  {/* Card Checkbox for Bulk Actions */}
+                  <div className="absolute top-3 left-3 z-10 bg-white/90 backdrop-blur-xs p-1.5 rounded-lg border border-slate-200/80 shadow-xs">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(scr.id)}
+                      onChange={() => handleSelectItemToggle(scr.id)}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Screenshot Image Container */}
+                  <div 
+                    className="relative h-48 bg-slate-950 flex items-center justify-center overflow-hidden cursor-zoom-in group"
+                    onClick={() => setSelectedScreenshot(scr)}
+                  >
+                    <img 
+                      src={scr.image} 
+                      alt="Win proof screenshot" 
+                      className="h-full w-full object-contain group-hover:scale-102 transition duration-300"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition duration-200 flex items-center justify-center gap-2">
+                      <Eye className="h-5 w-5 text-white" />
+                      <span className="text-white text-xs font-bold">View Fullscreen</span>
+                    </div>
+                    {/* Source Indicator Tag */}
+                    <span className={`absolute top-3 right-3 px-2 py-0.5 rounded-md text-[9px] font-bold tracking-wider uppercase border shadow-xs ${
+                      scr.source === "reviews" 
+                        ? "bg-indigo-600 border-indigo-500 text-white" 
+                        : "bg-amber-500 border-amber-400 text-slate-950"
+                    }`}>
+                      {scr.type === "jackpot" ? "Review: Jackpot" : scr.type === "balance" ? "Review: Balance" : "Direct Slip"}
+                    </span>
+                  </div>
+
+                  {/* Body Content */}
+                  <div className="p-4 flex-1 flex flex-col justify-between space-y-4">
+                    <div className="space-y-2">
+                      {/* Brand Info */}
+                      <div className="flex items-center gap-2">
+                        {scr.source === "reviews" ? (
+                          <MessageSquare className="h-4 w-4 text-indigo-500" />
+                        ) : (
+                          <Trophy className="h-4 w-4 text-amber-500" />
+                        )}
+                        <span className="font-extrabold text-slate-900 text-sm truncate">{getCasinoName(scr.casinoId)}</span>
+                      </div>
+
+                      {/* Cash Claim or Review Text */}
+                      {scr.amount !== undefined ? (
+                        <div className="font-black text-emerald-700 text-lg leading-none">
+                          ${Number(scr.amount).toLocaleString()}
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          {scr.title && (
+                            <h5 className="font-bold text-slate-900 text-xs line-clamp-1">{scr.title}</h5>
+                          )}
+                          {scr.comment && (
+                            <p className="text-slate-500 text-[11px] leading-relaxed italic line-clamp-2">
+                              "{scr.comment}"
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                      {/* Meta info */}
+                      <div className="text-[10px] text-slate-400 font-medium">
+                        <span>Uploaded {new Date(scr.uploadedAt).toLocaleDateString()}</span>
+                      </div>
+
+                      {/* Status Badging */}
+                      <span
+                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold border capitalize
+                          ${
+                            scr.approved
+                              ? "bg-emerald-50 border-emerald-100 text-emerald-700"
+                              : "bg-amber-50 border-amber-100 text-amber-700 animate-pulse"
+                          }`}
+                      >
+                        {scr.approved ? "Approved" : "Pending"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons Row */}
+                  <div className="bg-slate-50 px-4 py-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                    {scr.approved ? (
+                      <button
+                        onClick={() => handleUnifiedStatus(scr, false)}
+                        className="px-2.5 py-1.5 border border-slate-200 text-slate-600 hover:bg-slate-100 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                        title="Unapprove"
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                        <span>Revoke</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleUnifiedStatus(scr, true)}
+                        className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                        title="Approve"
+                      >
+                        <CheckCircle className="h-3.5 w-3.5" />
+                        <span>Approve</span>
+                      </button>
+                    )
+                    }
+                    <button
+                      onClick={() => handleDeleteUnified(scr)}
+                      className="p-1.5 border border-slate-200 text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                      title="Delete proof"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
@@ -615,7 +848,7 @@ export const ModerationManager: React.FC = () => {
                       />
                     </th>
                     <th className="p-4">Brand Listing</th>
-                    <th className="p-4">Prize Amount</th>
+                    <th className="p-4">Prize Amount / Detail</th>
                     <th className="p-4">Preview</th>
                     <th className="p-4">Date</th>
                     <th className="p-4">Status</th>
@@ -639,17 +872,37 @@ export const ModerationManager: React.FC = () => {
                           <span className="font-bold text-slate-900">{getCasinoName(scr.casinoId)}</span>
                         </div>
                       </td>
-                      <td className="p-4 font-bold text-emerald-700 text-sm">
-                        ${Number(scr.amount).toLocaleString()}
+                      <td className="p-4">
+                        {scr.amount !== undefined ? (
+                          <span className="font-bold text-emerald-700 text-sm">
+                            ${Number(scr.amount).toLocaleString()}
+                          </span>
+                        ) : (
+                          <div className="space-y-0.5">
+                            <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-1.5 py-0.5 rounded font-bold uppercase">
+                              {scr.type === "jackpot" ? "Review Jackpot" : "Review Balance"}
+                            </span>
+                            {scr.title && (
+                              <p className="text-slate-500 text-[10px] line-clamp-1 italic mt-1">"{scr.title}"</p>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td className="p-4">
-                        <button
+                        <div 
+                          className="relative h-12 w-20 rounded-lg overflow-hidden border border-slate-200 cursor-zoom-in bg-slate-950 flex items-center justify-center group"
                           onClick={() => setSelectedScreenshot(scr)}
-                          className="flex items-center gap-1.5 px-2 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 font-bold"
                         >
-                          <Eye className="h-3.5 w-3.5" />
-                          <span>View Image</span>
-                        </button>
+                          <img 
+                            src={scr.image} 
+                            alt="Screenshot preview" 
+                            className="h-full w-full object-contain group-hover:scale-105 transition"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                            <Eye className="h-3 w-3 text-white" />
+                          </div>
+                        </div>
                       </td>
                       <td className="p-4 text-slate-400 font-mono font-bold text-[10px]">
                         {new Date(scr.uploadedAt).toLocaleDateString()}
@@ -670,7 +923,7 @@ export const ModerationManager: React.FC = () => {
                         <div className="flex items-center justify-end gap-1.5">
                           {scr.approved ? (
                             <button
-                              onClick={() => handleScreenshotStatus(scr, false)}
+                              onClick={() => handleUnifiedStatus(scr, false)}
                               className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 cursor-pointer"
                               title="Unapprove screenshot"
                             >
@@ -678,7 +931,7 @@ export const ModerationManager: React.FC = () => {
                             </button>
                           ) : (
                             <button
-                              onClick={() => handleScreenshotStatus(scr, true)}
+                              onClick={() => handleUnifiedStatus(scr, true)}
                               className="p-1.5 rounded-lg border border-emerald-250 text-emerald-600 hover:bg-emerald-50 cursor-pointer"
                               title="Approve screenshot"
                             >
@@ -686,7 +939,7 @@ export const ModerationManager: React.FC = () => {
                             </button>
                           )}
                           <button
-                            onClick={() => handleDeleteScreenshot(scr.id)}
+                            onClick={() => handleDeleteUnified(scr)}
                             className="p-1.5 rounded-lg border border-slate-200 text-rose-600 hover:bg-rose-50 cursor-pointer"
                             title="Delete screenshot"
                           >
@@ -704,9 +957,9 @@ export const ModerationManager: React.FC = () => {
       )}
 
       {/* Screen Preview Lightbox Modal */}
-      {selectedScreenshot && (
+       {selectedScreenshot && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden max-w-lg w-full shadow-2xl flex flex-col justify-between">
+          <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden max-w-3xl w-full shadow-2xl flex flex-col justify-between">
             <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                 Win Proof: {getCasinoName(selectedScreenshot.casinoId)}
@@ -720,21 +973,38 @@ export const ModerationManager: React.FC = () => {
             </div>
 
             <div className="p-6 space-y-4">
-              <div className="border rounded-2xl overflow-hidden max-h-96 bg-slate-950 flex items-center justify-center">
+              <div className="border rounded-2xl overflow-hidden max-h-[60vh] bg-slate-950 flex items-center justify-center">
                 <img
                   src={selectedScreenshot.image}
                   alt="Jackpot win validation proof"
-                  className="max-h-80 object-contain w-full"
+                  className="max-h-[55vh] object-contain w-full cursor-zoom-in"
+                  onClick={() => window.open(selectedScreenshot.image, "_blank")}
+                  title="Click to open image in a new tab"
                   referrerPolicy="no-referrer"
                 />
               </div>
 
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-black tracking-wider block">Winner Claim</span>
-                  <span className="text-xl font-black text-slate-900">${Number(selectedScreenshot.amount).toLocaleString()}</span>
+                  <span className="text-[10px] text-slate-400 uppercase font-black tracking-wider block">
+                    {selectedScreenshot.amount !== undefined ? "Winner Claim" : "Player Rating & Review"}
+                  </span>
+                  {selectedScreenshot.amount !== undefined ? (
+                    <span className="text-xl font-black text-slate-900">${Number(selectedScreenshot.amount).toLocaleString()}</span>
+                  ) : (
+                    <div className="space-y-1 mt-0.5">
+                      <div className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 px-2 py-0.5 border border-indigo-150 rounded-lg font-bold text-[10px]">
+                        <span>{selectedScreenshot.title || "Jackpot Proof"}</span>
+                      </div>
+                      {selectedScreenshot.comment && (
+                        <p className="text-slate-500 text-xs italic leading-tight block mt-1">
+                          "{selectedScreenshot.comment}"
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="text-right">
+                <div className="text-right shrink-0">
                   <span className="text-[10px] text-slate-400 uppercase font-black tracking-wider block">Moderation Status</span>
                   <span
                     className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border capitalize mt-0.5
@@ -754,7 +1024,7 @@ export const ModerationManager: React.FC = () => {
               {!selectedScreenshot.approved ? (
                 <button
                   onClick={() => {
-                    handleScreenshotStatus(selectedScreenshot, true);
+                    handleUnifiedStatus(selectedScreenshot, true);
                     setSelectedScreenshot(null);
                   }}
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1"
@@ -764,7 +1034,7 @@ export const ModerationManager: React.FC = () => {
               ) : (
                 <button
                   onClick={() => {
-                    handleScreenshotStatus(selectedScreenshot, false);
+                    handleUnifiedStatus(selectedScreenshot, false);
                     setSelectedScreenshot(null);
                   }}
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition"

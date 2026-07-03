@@ -31,6 +31,9 @@ interface SellRequest {
   casinoName: string;
   affiliateLink: string;
   screenshot?: string;
+  balanceScreenshot?: string;
+  bikashNumber?: string;
+  dateTime?: string;
   amount: number;
   message: string;
   status: "pending" | "approved" | "rejected";
@@ -207,6 +210,18 @@ export const SellRequestsManager: React.FC = () => {
                     <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     <span className="truncate">{req.email}</span>
                   </p>
+                  {req.bikashNumber && (
+                    <p className="flex items-center gap-2 text-amber-700">
+                      <span className="font-extrabold text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">bKash</span>
+                      <span className="font-mono font-bold">{req.bikashNumber}</span>
+                    </p>
+                  )}
+                  {req.dateTime && (
+                    <p className="flex items-center gap-2 text-slate-400 text-[10px]">
+                      <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>{new Date(req.dateTime).toLocaleString()}</span>
+                    </p>
+                  )}
                 </div>
 
                 <p className="text-[11px] text-slate-400 line-clamp-3 leading-relaxed mb-4 italic">
@@ -311,6 +326,28 @@ export const SellRequestsManager: React.FC = () => {
                 </div>
               </div>
 
+              {/* bKash & Date/Time row */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">
+                    bKash Wallet Number
+                  </span>
+                  <p className="text-xs font-mono font-black text-amber-700 bg-amber-50 px-2 py-1.5 rounded-xl border border-amber-100 inline-block">
+                    {activeRequest.bikashNumber || "Not Specified"}
+                  </p>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">
+                    Jackpot Date & Time
+                  </span>
+                  <p className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                    {activeRequest.dateTime ? new Date(activeRequest.dateTime).toLocaleString() : "Not Specified"}
+                  </p>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">
@@ -350,21 +387,40 @@ export const SellRequestsManager: React.FC = () => {
                 </div>
               </div>
 
-              {activeRequest.screenshot && (
-                <div>
-                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">
-                    Acquisition Screenshot Attachment
-                  </span>
-                  <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-                    <img
-                      src={activeRequest.screenshot}
-                      alt="Acquisition proof attachment"
-                      className="w-full object-contain max-h-60"
-                      referrerPolicy="no-referrer"
-                    />
+              {/* Dual image screenshots render */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {activeRequest.screenshot && (
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">
+                      Jackpot Screenshot
+                    </span>
+                    <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs bg-slate-50">
+                      <img
+                        src={activeRequest.screenshot}
+                        alt="Jackpot proof attachment"
+                        className="w-full object-contain max-h-48"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+
+                {activeRequest.balanceScreenshot && (
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">
+                      Balance Screenshot
+                    </span>
+                    <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs bg-slate-50">
+                      <img
+                        src={activeRequest.balanceScreenshot}
+                        alt="Balance proof attachment"
+                        className="w-full object-contain max-h-48"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">

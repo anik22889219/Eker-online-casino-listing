@@ -155,9 +155,14 @@
         "casinoName": { "type": "string" },
         "affiliateLink": { "type": "string" },
         "screenshot": { "type": "string" },
+        "balanceScreenshot": { "type": "string" },
+        "bikashNumber": { "type": "string" },
+        "dateTime": { "type": "string" },
+        "userId": { "type": "string" },
         "amount": { "type": "number" },
         "message": { "type": "string" },
-        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["name", "email", "casinoName", "affiliateLink", "amount", "message", "status"]
     },

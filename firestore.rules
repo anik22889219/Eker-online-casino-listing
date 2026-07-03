@@ -33,23 +33,23 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return isSignedIn() && (
-        (hasUserDoc() && getUserData().role == 'super_admin') ||
-        (request.auth.token != null && request.auth.token.email == 'aminulhoqueanik@gmail.com')
+        (request.auth.token != null && request.auth.token.email == 'aminulhoqueanik@gmail.com') ||
+        (hasUserDoc() && getUserData().role == 'super_admin')
       );
     }
 
     // Admins and bootstrap admin bypass
     function isAdmin() {
       return isSignedIn() && (
-        (hasUserDoc() && (getUserData().role == 'admin' || getUserData().role == 'super_admin')) ||
-        (request.auth.token != null && request.auth.token.email == 'aminulhoqueanik@gmail.com')
+        (request.auth.token != null && request.auth.token.email == 'aminulhoqueanik@gmail.com') ||
+        (hasUserDoc() && (getUserData().role == 'admin' || getUserData().role == 'super_admin'))
       );
     }
 
     function isModerator() {
       return isSignedIn() && (
-        (hasUserDoc() && (getUserData().role == 'moderator' || getUserData().role == 'admin' || getUserData().role == 'super_admin')) ||
-        (request.auth.token != null && request.auth.token.email == 'aminulhoqueanik@gmail.com')
+        (request.auth.token != null && request.auth.token.email == 'aminulhoqueanik@gmail.com') ||
+        (hasUserDoc() && (getUserData().role == 'moderator' || getUserData().role == 'admin' || getUserData().role == 'super_admin'))
       );
     }
 
@@ -176,14 +176,12 @@ service cloud.firestore {
     // 4. REVIEWS COLLECTION RULES
     // =========================================================================
     match /reviews/{reviewId} {
-      allow get: if isModerator();
-      allow get: if resource.data.approved == true;
-      allow list: if isModerator();
-      allow list: if resource.data.approved == true;
+      allow get: if isOwner(resource.data.userId) || isModerator() || resource.data.approved == true;
+      allow list: if isOwner(resource.data.userId) || isModerator() || resource.data.approved == true;
 
       allow create: if isSignedIn() && 
                     request.resource.data.userId == request.auth.uid && 
-                    request.resource.data.approved == false && // Must start unapproved
+                    (request.resource.data.approved == false || isModerator()) && // Must start unapproved unless submitted by a moderator/admin
                     isValidReview(request.resource.data, true);
 
       allow update: if (isOwner(resource.data.userId) && 
@@ -307,8 +305,8 @@ service cloud.firestore {
     // 9. SELL REQUESTS COLLECTION RULES
     // =========================================================================
     match /sellRequests/{requestId} {
-      allow get: if isModerator() || (isSignedIn() && resource.data.email == request.auth.token.email);
-      allow list: if isModerator();
+      allow get: if isModerator() || (isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.email == request.auth.token.email));
+      allow list: if isModerator() || (isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.email == request.auth.token.email));
 
       allow create: if isValidSellRequest(request.resource.data, true) &&
                     request.resource.data.status == 'pending'; // Force pending
@@ -327,6 +325,10 @@ service cloud.firestore {
       (!('casinoName' in data) || (data.casinoName is string && data.casinoName.size() <= 256)) &&
       (!('affiliateLink' in data) || (data.affiliateLink is string && data.affiliateLink.size() <= 2048)) &&
       (!('screenshot' in data) || (data.screenshot is string && data.screenshot.size() <= 2048)) &&
+      (!('balanceScreenshot' in data) || (data.balanceScreenshot is string && data.balanceScreenshot.size() <= 2048)) &&
+      (!('bikashNumber' in data) || (data.bikashNumber is string && data.bikashNumber.size() <= 64)) &&
+      (!('dateTime' in data) || (data.dateTime is string && data.dateTime.size() <= 128)) &&
+      (!('userId' in data) || (data.userId is string && data.userId.size() <= 128)) &&
       (!('amount' in data) || (data.amount is number)) &&
       (!('message' in data) || (data.message is string && data.message.size() <= 4096)) &&
       (!('status' in data) || (data.status in ['pending', 'approved', 'rejected']));

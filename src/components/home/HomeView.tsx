@@ -122,22 +122,8 @@ export const HomeView: React.FC = () => {
         schemaJson={schemaJson}
       />
 
-      {/* 1 & 2 & 3. Hero & Search & Category Filter */}
-      <HomeHero
-        searchTerm={searchTerm}
-        setSearchTerm={setSearchTerm}
-        selectedCategory={selectedCategory}
-        setSelectedCategory={setSelectedCategory}
-        selectedCountry={selectedCountry}
-        setSelectedCountry={setSelectedCountry}
-        selectedBonusType={selectedBonusType}
-        setSelectedBonusType={setSelectedBonusType}
-        featuredOnly={featuredOnly}
-        setFeaturedOnly={setFeaturedOnly}
-        categories={categories}
-        countries={countries}
-        bonusTypes={bonusTypes}
-      />
+      {/* 1 & 2 & 3. Hero */}
+      <HomeHero />
 
       {loading ? (
         <div className="text-center py-24 space-y-4">
