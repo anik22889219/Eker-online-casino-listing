@@ -11,7 +11,7 @@ import {
   query,
   where,
 } from "firebase/firestore";
-import { generateCasinoContent, crawlWebsiteLogoAndName } from "../../firebase/cloudFunctions";
+import { generateCasinoContent, crawlWebsiteLogoAndName, extractPromoFromBanner, refreshCasinoAssets } from "../../firebase/cloudFunctions";
 import { uploadToCloudinary } from "../../services/cloudinaryService";
 import {
   Search,
@@ -149,6 +149,8 @@ export const CasinoManager: React.FC = () => {
   const [triggerAiOnCreate, setTriggerAiOnCreate] = useState<boolean>(false); // disabled by default for lightning-fast manual uploads
   const [newCasinoName, setNewCasinoName] = useState<string>("");
   const [newWelcomeBonus, setNewWelcomeBonus] = useState<string>("Exclusive Deposit Bonus");
+  const [newCasinoLogoUrl, setNewCasinoLogoUrl] = useState<string>("");
+  const [crawlingAssets, setCrawlingAssets] = useState<boolean>(false);
   const [newCasinoCategory, setNewCasinoCategory] = useState<string>("Casino");
   const [newCasinoStatus, setNewCasinoStatus] = useState<"draft" | "published">("published"); // default to Published instantly
   const [openEditorAfterCreate, setOpenEditorAfterCreate] = useState<boolean>(false); // default to false, keeping creators in the table flow
@@ -164,6 +166,44 @@ export const CasinoManager: React.FC = () => {
   const [formLoading, setFormLoading] = useState<boolean>(false);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Custom Confirmation Dialog State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText: string;
+    cancelText?: string;
+    onConfirm: () => void | Promise<void>;
+    type: "danger" | "warning" | "info" | "success";
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    confirmText: "Confirm",
+    onConfirm: () => {},
+    type: "info"
+  });
+
+  const requestConfirmation = (
+    title: string,
+    message: string,
+    onConfirm: () => void | Promise<void>,
+    options?: { confirmText?: string; cancelText?: string; type?: "danger" | "warning" | "info" | "success" }
+  ) => {
+    setConfirmModal({
+      isOpen: true,
+      title,
+      message,
+      confirmText: options?.confirmText || "Confirm",
+      cancelText: options?.cancelText || "Cancel",
+      onConfirm: () => {
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+        onConfirm();
+      },
+      type: options?.type || "info"
+    });
+  };
 
   // Submission popup states
   const [isSubmittingPopup, setIsSubmittingPopup] = useState<boolean>(false);
@@ -277,6 +317,20 @@ export const CasinoManager: React.FC = () => {
         setNewBannerPreview(url);
         setNewBannerFile(file);
         setFormSuccess("Banner uploaded and optimized successfully to Cloudinary!");
+        
+        try {
+          setFormSuccess("Banner uploaded. Analyzing image with Gemini to auto-extract Welcome Slogan...");
+          const res = await extractPromoFromBanner(url);
+          if (res.success && res.welcomeSlogan) {
+            setNewWelcomeBonus(res.welcomeSlogan);
+            setFormSuccess(`Banner uploaded & welcome slogan auto-extracted: "${res.welcomeSlogan}"`);
+          } else {
+            setFormSuccess("Banner uploaded successfully (could not extract slogan).");
+          }
+        } catch (extractErr: any) {
+          console.warn("Slogan auto-extraction failed:", extractErr);
+          setFormSuccess("Banner uploaded successfully (auto-extraction skipped).");
+        }
       } else if (type === "logo") {
         setUploadingLogo(true);
         // Optimize logo (max 400x400)
@@ -286,11 +340,27 @@ export const CasinoManager: React.FC = () => {
         setFormSuccess("Logo uploaded and optimized successfully to Cloudinary!");
       } else if (type === "banner") {
         setUploadingBanner(true);
+        setFormError(null);
+        setFormSuccess(null);
         // Optimize banner (max 1600x900)
         const optimized = await optimizeImage(file, 1600, 900);
         const url = await uploadToCloudinary(optimized, "banners", file.name);
         setEditFields((prev) => ({ ...prev, bannerImage: url }));
         setFormSuccess("Banner uploaded and optimized successfully to Cloudinary!");
+
+        try {
+          setFormSuccess("Banner uploaded. Analyzing image with Gemini to auto-extract Welcome Slogan...");
+          const res = await extractPromoFromBanner(url);
+          if (res.success && res.welcomeSlogan) {
+            setEditFields((prev) => ({ ...prev, welcomeBonus: res.welcomeSlogan }));
+            setFormSuccess(`Banner uploaded & welcome slogan auto-extracted: "${res.welcomeSlogan}"`);
+          } else {
+            setFormSuccess("Banner uploaded successfully (could not extract slogan).");
+          }
+        } catch (extractErr: any) {
+          console.warn("Slogan auto-extraction failed:", extractErr);
+          setFormSuccess("Banner uploaded successfully (auto-extraction skipped).");
+        }
       }
     } catch (err: any) {
       console.error("File upload failed:", err);
@@ -299,6 +369,46 @@ export const CasinoManager: React.FC = () => {
       setUploadingLogo(false);
       setUploadingBanner(false);
       setNewBannerUploading(false);
+    }
+  };
+
+  // Automated/Manual Crawler for brand logo & name from target affiliate link
+  const handleCrawlAffiliateLink = async (urlToCrawl?: string) => {
+    const linkToUse = urlToCrawl || newAffiliateLink;
+    if (!linkToUse || !linkToUse.trim()) return;
+
+    let formattedLink = linkToUse.trim();
+    if (!/^https?:\/\//i.test(formattedLink)) {
+      formattedLink = `https://${formattedLink}`;
+    }
+
+    try {
+      new URL(formattedLink);
+    } catch (_) {
+      return; // Not a valid URL yet
+    }
+
+    setCrawlingAssets(true);
+    setFormError(null);
+    setFormSuccess("Crawling brand logo & name from target website...");
+
+    try {
+      const res = await crawlWebsiteLogoAndName(formattedLink);
+      if (res.success) {
+        if (!newCasinoName.trim() && res.name) {
+          setNewCasinoName(res.name);
+        }
+        if (res.logoUrl) {
+          setNewCasinoLogoUrl(res.logoUrl);
+          setFormSuccess(`Brand logo and name successfully crawled!`);
+        } else {
+          setFormSuccess(`Brand crawled (no logo found, using default).`);
+        }
+      }
+    } catch (err: any) {
+      console.warn("Auto crawl on link change failed:", err);
+    } finally {
+      setCrawlingAssets(false);
     }
   };
 
@@ -385,15 +495,18 @@ export const CasinoManager: React.FC = () => {
         let crawledName = "";
         let crawledLogoUrl = "";
 
-        try {
-          console.log("Crawling website brand assets on-demand...");
-          const crawlResult = await crawlWebsiteLogoAndName(formattedLink);
-          if (crawlResult.success) {
-            crawledName = crawlResult.name;
-            crawledLogoUrl = crawlResult.logoUrl;
+        // If not already crawled, perform a fast crawl now
+        if (!newCasinoLogoUrl) {
+          try {
+            console.log("Crawling website brand assets on-demand...");
+            const crawlResult = await crawlWebsiteLogoAndName(formattedLink);
+            if (crawlResult.success) {
+              crawledName = crawlResult.name;
+              crawledLogoUrl = crawlResult.logoUrl;
+            }
+          } catch (crawlErr) {
+            console.warn("Lightweight crawl failed, falling back to hostname extraction:", crawlErr);
           }
-        } catch (crawlErr) {
-          console.warn("Lightweight crawl failed, falling back to hostname extraction:", crawlErr);
         }
 
         setSubmissionStep("saving");
@@ -410,7 +523,7 @@ export const CasinoManager: React.FC = () => {
           slug: initialSlug,
           affiliateLink: formattedLink,
           casinoName: finalName,
-          casinoLogo: crawledLogoUrl || "",
+          casinoLogo: newCasinoLogoUrl || crawledLogoUrl || "",
           bannerImage: bannerUrl,
           shortDescription: `Exclusive affiliate offer for ${finalName}. Sign up today through our verified direct link!`,
           landingContent: `# ${finalName}\nJoin ${finalName} using our exclusive partner link. Click above to claim your direct sign-up bonus package and start playing now!`,
@@ -446,6 +559,7 @@ export const CasinoManager: React.FC = () => {
         setNewCasinoStatus("published");
         setNewBannerFile(null);
         setNewBannerPreview("");
+        setNewCasinoLogoUrl("");
 
         setCreatedCasinoInfo({
           name: finalName,
@@ -468,38 +582,80 @@ export const CasinoManager: React.FC = () => {
 
   // Trigger AI content regeneration on an existing listing
   const handleRegenerateAi = async (casino: Casino) => {
-    if (!window.confirm(`Are you sure you want to regenerate all AI content for "${casino.casinoName}"? This will overwrite the landing page draft content (your manual reviews will be preserved!).`)) {
-      return;
-    }
+    requestConfirmation(
+      "Regenerate AI Content",
+      `Are you sure you want to regenerate all AI content for "${casino.casinoName}"? This will overwrite the landing page draft content (your manual reviews will be preserved!).`,
+      async () => {
+        setFormLoading(true);
+        setFormError(null);
+        setFormSuccess(`Regenerating AI content for ${casino.casinoName}...`);
 
-    setFormLoading(true);
-    setFormError(null);
-    setFormSuccess(`Regenerating AI content for ${casino.casinoName}...`);
-
-    try {
-      const response = await generateCasinoContent(casino.affiliateLink, casino.bannerImage, casino.id);
-      if (response.success) {
-        setFormSuccess(`Successfully regenerated AI content for ${casino.casinoName}!`);
-        // If editing this casino, update states
-        if (editingCasino?.id === casino.id) {
-          const updated: Casino = {
-            ...editingCasino,
-            ...response.generatedData,
-            landingContent: response.generatedData.landingContent || editingCasino.landingContent,
-            slug: response.slug,
-          };
-          setEditingCasino(updated);
-          setEditFields(updated);
+        try {
+          const response = await generateCasinoContent(casino.affiliateLink, casino.bannerImage, casino.id);
+          if (response.success) {
+            setFormSuccess(`Successfully regenerated AI content for ${casino.casinoName}!`);
+            // If editing this casino, update states
+            if (editingCasino?.id === casino.id) {
+              const updated: Casino = {
+                ...editingCasino,
+                ...response.generatedData,
+                landingContent: response.generatedData.landingContent || editingCasino.landingContent,
+                slug: response.slug,
+              };
+              setEditingCasino(updated);
+              setEditFields(updated);
+            }
+          } else {
+            throw new Error("AI Content generator returned an unsuccessful state.");
+          }
+        } catch (err: any) {
+          console.error(err);
+          setFormError(err.message || "Regeneration failed.");
+        } finally {
+          setFormLoading(false);
         }
-      } else {
-        throw new Error("AI Content generator returned an unsuccessful state.");
-      }
-    } catch (err: any) {
-      console.error(err);
-      setFormError(err.message || "Regeneration failed.");
-    } finally {
-      setFormLoading(false);
-    }
+      },
+      { type: "warning", confirmText: "Regenerate" }
+    );
+  };
+
+  // Trigger Smart Self-Healing & Asset Refresh
+  const handleSmartRefresh = async (casino: Casino) => {
+    requestConfirmation(
+      "Smart Self-Healing Sync",
+      `Would you like to perform a Smart Self-Healing Sync for "${casino.casinoName}"?\n\nThis will automatically scan, fetch, and restore any missing logos, taglines/welcomeSlogans, descriptions, or banners from the source site while keeping your manual modifications intact.`,
+      async () => {
+        setFormLoading(true);
+        setFormError(null);
+        setFormSuccess(`Scanning & auto-healing assets for ${casino.casinoName}...`);
+
+        try {
+          const result = await refreshCasinoAssets(casino.id);
+          if (result.success) {
+            const heals = result.healedFields.join("\n• ");
+            setFormSuccess(`Successfully synced & healed "${casino.casinoName}"!\n\nApplied actions:\n• ${heals}`);
+            
+            // If editing this casino, update state to reflect the healed fields in real-time
+            if (editingCasino?.id === casino.id) {
+              const updated = {
+                ...editingCasino,
+                ...result.updatedCasino
+              };
+              setEditingCasino(updated);
+              setEditFields(updated);
+            }
+          } else {
+            throw new Error("Self-healing service returned an unsuccessful state.");
+          }
+        } catch (err: any) {
+          console.error(err);
+          setFormError(err.message || "Self-healing refresh failed.");
+        } finally {
+          setFormLoading(false);
+        }
+      },
+      { type: "warning", confirmText: "Sync Now" }
+    );
   };
 
   // Edit fields change handler
@@ -583,55 +739,61 @@ export const CasinoManager: React.FC = () => {
 
   // Soft Delete Listing (Always soft-delete, never purge!)
   const handleSoftDelete = async (id: string, name: string) => {
-    if (!window.confirm(`Are you sure you want to delete the casino "${name}"? This action soft-deletes and removes it from listing tables, but does not purge it from Firestore.`)) {
-      return;
-    }
-
-    try {
-      const docRef = doc(db, "casinos", id);
-      await updateDoc(docRef, { isDeleted: true, updatedAt: serverTimestamp() });
-      setFormSuccess(`Successfully archived & deleted "${name}".`);
-      setSelectedIds((prev) => prev.filter((i) => i !== id));
-    } catch (err: any) {
-      console.error("Soft delete error:", err);
-      alert(`Soft delete failed: ${err.message || err}`);
-    }
+    requestConfirmation(
+      "Delete Casino Listing",
+      `Are you sure you want to delete the casino "${name}"? This action soft-deletes and removes it from listing tables, but does not purge it from Firestore.`,
+      async () => {
+        try {
+          const docRef = doc(db, "casinos", id);
+          await updateDoc(docRef, { isDeleted: true, updatedAt: serverTimestamp() });
+          setFormSuccess(`Successfully archived & deleted "${name}".`);
+          setSelectedIds((prev) => prev.filter((i) => i !== id));
+        } catch (err: any) {
+          console.error("Soft delete error:", err);
+          setFormError(`Soft delete failed: ${err.message || err}`);
+        }
+      },
+      { type: "danger", confirmText: "Delete" }
+    );
   };
 
   // Bulk Operations
   const handleBulkAction = async (action: "publish" | "archive" | "delete" | "feature" | "unfeature") => {
     if (selectedIds.length === 0) return;
-    if (!window.confirm(`Apply bulk action "${action}" to ${selectedIds.length} selected listings?`)) {
-      return;
-    }
+    requestConfirmation(
+      "Bulk Operation",
+      `Apply bulk action "${action}" to ${selectedIds.length} selected listings?`,
+      async () => {
+        setFormLoading(true);
+        let successCount = 0;
 
-    setFormLoading(true);
-    let successCount = 0;
+        try {
+          for (const id of selectedIds) {
+            const docRef = doc(db, "casinos", id);
+            let payload: any = { updatedAt: serverTimestamp() };
 
-    try {
-      for (const id of selectedIds) {
-        const docRef = doc(db, "casinos", id);
-        let payload: any = { updatedAt: serverTimestamp() };
+            if (action === "publish") payload.status = "published";
+            else if (action === "archive") payload.status = "archived";
+            else if (action === "delete") payload.isDeleted = true;
+            else if (action === "feature") payload.featured = true;
+            else if (action === "unfeature") payload.featured = false;
 
-        if (action === "publish") payload.status = "published";
-        else if (action === "archive") payload.status = "archived";
-        else if (action === "delete") payload.isDeleted = true;
-        else if (action === "feature") payload.featured = true;
-        else if (action === "unfeature") payload.featured = false;
+            await updateDoc(docRef, payload);
+            successCount++;
+          }
 
-        await updateDoc(docRef, payload);
-        successCount++;
-      }
-
-      setFormSuccess(`Successfully applied bulk action to ${successCount} listings.`);
-      setSelectedIds([]);
-      setBulkMenuOpen(false);
-    } catch (err: any) {
-      console.error("Bulk action failed:", err);
-      setFormError(`Bulk action experienced failures: ${err.message || err}`);
-    } finally {
-      setFormLoading(false);
-    }
+          setFormSuccess(`Successfully applied bulk action to ${successCount} listings.`);
+          setSelectedIds([]);
+          setBulkMenuOpen(false);
+        } catch (err: any) {
+          console.error("Bulk action failed:", err);
+          setFormError(`Bulk action experienced failures: ${err.message || err}`);
+        } finally {
+          setFormLoading(false);
+        }
+      },
+      { type: action === "delete" ? "danger" : "info", confirmText: "Apply" }
+    );
   };
 
   return (
@@ -799,18 +961,49 @@ export const CasinoManager: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">
-                Affiliate Target Link *
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
+                  Affiliate Target Link *
+                </label>
+                <button
+                  type="button"
+                  onClick={() => handleCrawlAffiliateLink()}
+                  disabled={crawlingAssets || !newAffiliateLink.trim() || formLoading}
+                  className="px-2.5 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 disabled:opacity-50 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                >
+                  {crawlingAssets ? (
+                    <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />
+                  ) : (
+                    <Sparkles className="w-3 h-3 text-indigo-600" />
+                  )}
+                  <span>{crawlingAssets ? "Crawling..." : "Fetch Brand Logo & Name"}</span>
+                </button>
+              </div>
               <input
                 type="text"
                 value={newAffiliateLink}
                 onChange={(e) => setNewAffiliateLink(e.target.value)}
+                onBlur={() => handleCrawlAffiliateLink()}
                 placeholder="https://tracker.casinopartner.com/visit/stake"
                 required
                 disabled={formLoading}
                 className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/50 font-mono"
               />
+
+              {/* Crawled logo preview */}
+              {newCasinoLogoUrl && (
+                <div className="mt-2.5 flex items-center gap-3 p-2 bg-slate-50 border border-slate-200 rounded-xl">
+                  <div className="w-10 h-10 rounded-lg border bg-white flex items-center justify-center p-1 overflow-hidden shrink-0">
+                    <img src={newCasinoLogoUrl} alt="Crawled Logo" className="w-full h-full object-contain" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Auto-extracted Logo</span>
+                    <span className="text-xs font-bold text-emerald-700 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Verified Brand Asset Found
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>
@@ -1772,11 +1965,11 @@ export const CasinoManager: React.FC = () => {
                             <Edit className="w-3.5 h-3.5" />
                           </button>
 
-                          {/* AI content regenerate trigger */}
+                          {/* AI content regenerate trigger & Self-Heal */}
                           <button
-                            onClick={() => handleRegenerateAi(c)}
+                            onClick={() => handleSmartRefresh(c)}
                             className="p-1.5 rounded-lg border border-slate-250 text-amber-600 hover:bg-amber-50 transition cursor-pointer"
-                            title="Regenerate dynamic assets with Gemini"
+                            title="Smart Refresh & Self-Heal missing assets (Logo, Tagline, Banner)"
                           >
                             <RefreshCw className="w-3.5 h-3.5 animate-spin-hover" />
                           </button>
@@ -2083,6 +2276,56 @@ export const CasinoManager: React.FC = () => {
               </div>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {/* Beautiful Custom Confirmation Dialog Box */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[100] p-4 animate-fade-in">
+          <div className="bg-white border border-slate-250 rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className={`p-2 rounded-xl shrink-0 ${
+                confirmModal.type === "danger" 
+                  ? "bg-rose-50 text-rose-600 border border-rose-100" 
+                  : confirmModal.type === "warning"
+                  ? "bg-amber-50 text-amber-600 border border-amber-100"
+                  : "bg-indigo-50 text-indigo-600 border border-indigo-100"
+              }`}>
+                {confirmModal.type === "danger" ? (
+                  <Trash2 className="w-5 h-5" />
+                ) : confirmModal.type === "warning" ? (
+                  <RefreshCw className="w-5 h-5" />
+                ) : (
+                  <CheckCircle className="w-5 h-5" />
+                )}
+              </div>
+              <div className="space-y-1.5 flex-1">
+                <h3 className="text-sm font-bold text-slate-800">{confirmModal.title}</h3>
+                <p className="text-xs text-slate-500 leading-relaxed whitespace-pre-line">{confirmModal.message}</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+                className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-semibold cursor-pointer transition"
+              >
+                {confirmModal.cancelText || "Cancel"}
+              </button>
+              <button
+                onClick={confirmModal.onConfirm}
+                className={`px-4 py-1.5 rounded-xl text-white text-xs font-semibold cursor-pointer transition shadow-sm ${
+                  confirmModal.type === "danger"
+                    ? "bg-rose-600 hover:bg-rose-700 hover:shadow-rose-100"
+                    : confirmModal.type === "warning"
+                    ? "bg-amber-600 hover:bg-amber-700 hover:shadow-amber-100"
+                    : "bg-indigo-600 hover:bg-indigo-700 hover:shadow-indigo-100"
+                }`}
+              >
+                {confirmModal.confirmText}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -20,14 +20,16 @@ export function getAppFunctions() {
  * Returns { success, casinoId, slug, generationDuration, generatedData }
  */
 export async function generateCasinoContent(affiliateLink: string, bannerImage?: string, casinoId?: string) {
-  const functions = getAppFunctions();
-  if (!functions) {
-    throw new Error("Cloud Functions not initialized.");
+  const response = await fetch("/api/generate-casino-content", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ affiliateLink, bannerImage, casinoId })
+  });
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(errText || "Failed to generate AI content from server.");
   }
-
-  const generate = httpsCallable(functions, "generateCasinoContent");
-  const response = await generate({ affiliateLink, bannerImage, casinoId });
-  return response.data as {
+  return await response.json() as {
     success: boolean;
     casinoId: string;
     slug: string;
@@ -41,17 +43,60 @@ export async function generateCasinoContent(affiliateLink: string, bannerImage?:
  * automatically uploading the found logo to Cloudinary.
  */
 export async function crawlWebsiteLogoAndName(affiliateLink: string) {
-  const functions = getAppFunctions();
-  if (!functions) {
-    throw new Error("Cloud Functions not initialized.");
+  const response = await fetch("/api/crawl-website", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ affiliateLink })
+  });
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(errText || "Failed to crawl brand assets from server.");
   }
-
-  const crawl = httpsCallable(functions, "crawlWebsiteLogoAndName");
-  const response = await crawl({ affiliateLink });
-  return response.data as {
+  return await response.json() as {
     success: boolean;
     name: string;
     logoUrl: string;
+  };
+}
+
+/**
+ * Triggers server-side banner image promo deal extraction using Gemini.
+ * Returns { success, welcomeSlogan }
+ */
+export async function extractPromoFromBanner(bannerImageUrl: string) {
+  const response = await fetch("/api/extract-promo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bannerImageUrl })
+  });
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(errText || "Failed to extract tagline from server.");
+  }
+  return await response.json() as {
+    success: boolean;
+    welcomeSlogan: string;
+  };
+}
+
+/**
+ * Sends a self-healing and asset refresh request for a specific casino ID.
+ * Automatically recovers missing logo, tagline/welcomeSlogan, description, banner, etc.
+ */
+export async function refreshCasinoAssets(casinoId: string) {
+  const response = await fetch("/api/refresh-casino", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ casinoId })
+  });
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(errText || "Failed to refresh and heal casino assets.");
+  }
+  return await response.json() as {
+    success: boolean;
+    healedFields: string[];
+    updatedCasino: any;
   };
 }
 

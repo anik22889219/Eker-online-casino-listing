@@ -9,18 +9,11 @@ import SellScreenshotCTA from "./SellScreenshotCTA";
 import HomeFaq from "./HomeFaq";
 import HomeFooter from "./HomeFooter";
 import SeoHelper from "../SeoHelper";
-import { Sparkles, Flame, Clock, RefreshCw } from "lucide-react";
+import { Sparkles, Flame, Clock, RefreshCw, X } from "lucide-react";
 
 export const HomeView: React.FC = () => {
   const [casinos, setCasinos] = useState<Casino[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Filter & Search states
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("all");
-  const [selectedCountry, setSelectedCountry] = useState("all");
-  const [selectedBonusType, setSelectedBonusType] = useState("all");
-  const [featuredOnly, setFeaturedOnly] = useState(false);
 
   // 1. Listen for published casinos in real-time
   useEffect(() => {
@@ -43,42 +36,8 @@ export const HomeView: React.FC = () => {
     return unsub;
   }, []);
 
-  // 2. Extract unique filter option values dynamically
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    casinos.forEach(c => { if (c.category) set.add(c.category); });
-    return Array.from(set);
-  }, [casinos]);
-
-  const countries = useMemo(() => {
-    const set = new Set<string>();
-    casinos.forEach(c => { if (c.country) set.add(c.country); });
-    return Array.from(set);
-  }, [casinos]);
-
-  // Available bonus types extracted from welcomeBonus descriptions or standard tags
-  const bonusTypes = ["Free Spins", "Deposit Match", "No Deposit", "Cashback", "VIP Reload"];
-
-  // 3. Perform filtering logic on search and selectors
-  const filteredCasinos = useMemo(() => {
-    return casinos.filter((c) => {
-      const nameMatch = c.casinoName?.toLowerCase().includes(searchTerm.toLowerCase());
-      const catMatch = c.category?.toLowerCase().includes(searchTerm.toLowerCase());
-      const countryMatch = c.country?.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesSearch = nameMatch || catMatch || countryMatch;
-
-      const matchesCategory = selectedCategory === "all" || c.category === selectedCategory;
-      const matchesCountry = selectedCountry === "all" || c.country === selectedCountry;
-      
-      // Filter by Bonus Type (matches welcomeBonus description)
-      const matchesBonusType = selectedBonusType === "all" || 
-        c.welcomeBonus?.toLowerCase().includes(selectedBonusType.toLowerCase());
-
-      const matchesFeatured = !featuredOnly || c.featured;
-
-      return matchesSearch && matchesCategory && matchesCountry && matchesBonusType && matchesFeatured;
-    });
-  }, [casinos, searchTerm, selectedCategory, selectedCountry, selectedBonusType, featuredOnly]);
+  // Show all active casinos since the search system is removed
+  const filteredCasinos = casinos;
 
   // 4. Categorized listing splits
   const featuredCasinos = useMemo(() => {
@@ -140,7 +99,7 @@ export const HomeView: React.FC = () => {
                 <Sparkles className="h-5 w-5 text-amber-500" />
                 <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">Featured Operators</h2>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
                 {featuredCasinos.map((c) => (
                   <CasinoCard key={c.id} casino={c} />
                 ))}
@@ -159,7 +118,7 @@ export const HomeView: React.FC = () => {
                 <p className="text-xs text-slate-400 font-bold uppercase">No matching listings found</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
                 {latestCasinos.map((c) => (
                   <CasinoCard key={c.id} casino={c} />
                 ))}
@@ -174,7 +133,7 @@ export const HomeView: React.FC = () => {
                 <Flame className="h-5 w-5 text-rose-500" />
                 <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">Top Rated Rewards</h2>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
                 {popularBonuses.map((c) => (
                   <CasinoCard key={c.id} casino={c} />
                 ))}

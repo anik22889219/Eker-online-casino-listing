@@ -134,4 +134,6 @@ export interface SystemSettings {
   maxUploadSizeMb: number;
   systemEmail: string;
   updatedAt: string;
+  demoScreenshotUrl?: string;
+  demoBalanceUrl?: string;
 }

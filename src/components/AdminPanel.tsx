@@ -43,6 +43,7 @@ import { BonusManager } from "./admin/BonusManager";
 import { ModerationManager } from "./admin/ModerationManager";
 import { CasinoAnalytics } from "./admin/CasinoAnalytics";
 import { JackpotListing } from "./JackpotListing";
+import { BannersManager } from "./admin/BannersManager";
 
 interface AdminPanelProps {
   deals: AffiliateLink[];
@@ -402,45 +403,47 @@ export default function AdminPanel({
   // GUEST LOGIN SCREEN
   if (!currentUser) {
     return (
-      <div className="max-w-md mx-auto my-10 rounded-3xl border border-slate-100 bg-white p-6 sm:p-8 shadow-xl relative overflow-hidden">
-        <div className="absolute right-0 top-0 -mr-8 -mt-8 h-24 w-24 rounded-full bg-emerald-50/50" />
+      <div className="w-full max-w-md mx-auto my-12 rounded-3xl border border-slate-800 bg-slate-950 p-6 sm:p-10 shadow-2xl relative overflow-hidden text-slate-100">
+        {/* Glow ambient background lights */}
+        <div className="absolute right-0 top-0 -mr-12 -mt-12 h-40 w-40 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
+        <div className="absolute left-0 bottom-0 -ml-12 -mb-12 h-40 w-40 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
 
-        <div className="text-center mb-6">
-          <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 mb-3 shadow-xs">
-            <KeyRound className="h-6 w-6" />
+        <div className="text-center mb-8">
+          <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900/80 text-amber-500 mb-4 shadow-xl border border-slate-800/80">
+            <KeyRound className="h-6 w-6 animate-pulse" />
           </div>
-          <h2 className="font-display font-extrabold text-2xl text-slate-900 tracking-tight">
+          <h2 className="font-display font-black text-2xl text-white tracking-tight">
             Creator Security Gate
           </h2>
-          <p className="text-xs text-slate-500 mt-1.5 max-w-xs mx-auto leading-relaxed">
-            Build your personal directory page, customize referral commission headers, and view detailed click graphs!
+          <p className="text-xs text-slate-400 mt-2 max-w-xs mx-auto leading-relaxed">
+            আপনার পার্সোনাল ডিরেক্টরি পেজ তৈরি করুন, রেফারেল বোনাস কাস্টমাইজ করুন এবং পারফরম্যান্স গ্রাফ পর্যবেক্ষণ করুন!
           </p>
         </div>
 
         {authError && (
-          <div className="rounded-2xl bg-red-50/75 border border-red-100 p-4 mb-5 text-xs text-red-800 leading-normal space-y-3 shadow-xs">
+          <div className="rounded-2xl bg-red-950/40 border border-red-900/50 p-4 mb-6 text-xs text-red-200 leading-normal space-y-3 shadow-md">
             <div className="flex items-start gap-2.5">
-              <span className="h-5 w-5 rounded-full bg-red-100 text-red-700 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">!</span>
+              <span className="h-5 w-5 rounded-full bg-red-900/60 text-red-200 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">!</span>
               <div>
-                <p className="font-bold text-red-950">Sign-in Security Notice</p>
-                <p className="mt-0.5 text-slate-600">{authError}</p>
+                <p className="font-bold text-red-100">Sign-in Security Notice</p>
+                <p className="mt-0.5 text-red-300/95">{authError}</p>
               </div>
             </div>
 
             {unauthorizedDomain && (
-              <div className="pt-2.5 border-t border-red-200/50 space-y-2.5 text-slate-700">
-                <p className="font-semibold text-slate-950 text-[11px] uppercase tracking-wider">How to resolve this:</p>
-                <ol className="list-decimal list-inside space-y-1.5 pl-0.5 leading-relaxed text-slate-600">
-                  <li>Go to your <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="text-emerald-700 font-bold underline hover:text-emerald-800">Firebase Console</a></li>
+              <div className="pt-2.5 border-t border-red-900/30 space-y-2.5 text-red-300">
+                <p className="font-semibold text-red-100 text-[11px] uppercase tracking-wider">How to resolve this:</p>
+                <ol className="list-decimal list-inside space-y-1.5 pl-0.5 leading-relaxed text-red-300/80">
+                  <li>Go to your <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="text-amber-400 font-bold underline hover:text-amber-300">Firebase Console</a></li>
                   <li>Go to <strong>Authentication</strong> &rarr; <strong>Settings</strong> tab</li>
                   <li>Scroll to <strong>Authorized domains</strong> list</li>
                   <li>Click <strong>Add domain</strong> and insert this exact address:</li>
                 </ol>
-                <div className="flex items-center gap-2 bg-white/90 p-2 rounded-lg border border-red-200 font-mono text-[10px] text-indigo-800 select-all font-semibold">
+                <div className="flex items-center gap-2 bg-slate-900/80 p-2 rounded-lg border border-red-900/50 font-mono text-[10px] text-amber-300 select-all font-semibold">
                   <span className="flex-1 truncate">{unauthorizedDomain}</span>
                   <button 
                     onClick={() => navigator.clipboard.writeText(unauthorizedDomain)}
-                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md text-[9px] uppercase font-bold tracking-wider text-slate-600 cursor-pointer active:scale-95 transition-all"
+                    className="px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md text-[9px] uppercase font-bold tracking-wider text-slate-300 cursor-pointer active:scale-95 transition-all"
                   >
                     Copy
                   </button>
@@ -450,15 +453,15 @@ export default function AdminPanel({
           </div>
         )}
 
-        <div className="space-y-4">
+        <div className="space-y-5">
           <button
             id="google-signin-btn"
             onClick={handleGoogleSignIn}
             disabled={authLoading}
-            className="w-full h-12 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center justify-center gap-2.5 border border-slate-200 shadow-xs transition-all cursor-pointer"
+            className="w-full h-12 rounded-xl bg-white hover:bg-slate-100 text-slate-950 font-bold text-xs flex items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all cursor-pointer active:scale-98"
           >
             {authLoading ? (
-              <Loader2 className="h-4.5 w-4.5 animate-spin" />
+              <Loader2 className="h-4.5 w-4.5 animate-spin text-slate-950" />
             ) : (
               <>
                 <svg className="h-4.5 w-4.5 shrink-0" viewBox="0 0 24 24">
@@ -484,20 +487,20 @@ export default function AdminPanel({
             )}
           </button>
 
-          <details className="group border border-slate-150 rounded-2xl bg-slate-50/50 p-1 transition-all">
-            <summary className="list-none flex items-center justify-between p-3.5 text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer select-none">
+          <details className="group border border-slate-800 rounded-2xl bg-slate-900/30 p-1 transition-all">
+            <summary className="list-none flex items-center justify-between p-3.5 text-xs font-bold text-slate-400 hover:text-slate-200 cursor-pointer select-none">
               <span>Alternative developer methods</span>
-              <span className="transition-transform duration-200 group-open:rotate-180 text-slate-400">
+              <span className="transition-transform duration-200 group-open:rotate-180 text-slate-500">
                 ▼
               </span>
             </summary>
 
-            <div className="p-3 border-t border-slate-100 space-y-4 bg-white rounded-xl mt-1">
+            <div className="p-4 border-t border-slate-900 space-y-4 bg-slate-950 rounded-xl mt-1">
               <button
                 id="quickstart-anonymous-btn"
                 onClick={handleAnonymousQuickstart}
                 disabled={authLoading}
-                className="w-full h-11 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
+                className="w-full h-11 rounded-xl bg-indigo-650 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm hover:shadow-md transition-all cursor-pointer active:scale-98"
               >
                 {authLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -509,16 +512,16 @@ export default function AdminPanel({
                 )}
               </button>
 
-              <div className="rounded-2xl bg-amber-50/60 border border-amber-150 p-4 space-y-2">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
-                  <Sparkles className="h-4 w-4 text-amber-600 shrink-0 animate-pulse" />
+              <div className="rounded-2xl bg-amber-950/20 border border-amber-900/30 p-4 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
+                  <Sparkles className="h-4 w-4 text-amber-500 shrink-0 animate-pulse" />
                   <span>Admin Credentials Guide</span>
                 </div>
-                <p className="text-[11px] text-amber-700 leading-normal">
-                  Register your admin account on your new custom Firebase database! Click <strong className="font-bold text-amber-800">Auto-fill</strong>, keep <strong className="font-bold text-amber-800">Register Credentials</strong> toggled, then click <strong className="font-bold text-amber-800">Create Owner Space</strong>.
+                <p className="text-[11px] text-slate-300 leading-normal">
+                  Register your admin account on your new custom Firebase database! Click <strong className="font-bold text-amber-400">Auto-fill</strong>, keep <strong className="font-bold text-amber-400">Register Credentials</strong> toggled, then click <strong className="font-bold text-amber-400">Create Owner Space</strong>.
                 </p>
-                <div className="p-3 rounded-lg bg-white/95 border border-amber-100/50 font-mono text-[10px] text-slate-700 space-y-1 relative shadow-xs">
-                  <div><span className="font-semibold text-slate-400">EMAIL:</span> admin@refdirect.com</div>
+                <div className="p-3 rounded-lg bg-slate-900 border border-slate-800/80 font-mono text-[10px] text-slate-300 space-y-1 relative shadow-xs">
+                  <div><span className="font-semibold text-slate-500">EMAIL:</span> admin@refdirect.com</div>
                   <div><span className="font-semibold text-slate-400">PASSWORD:</span> admin123</div>
                   <button
                     type="button"
@@ -530,14 +533,14 @@ export default function AdminPanel({
                 </div>
               </div>
 
-              <div className="relative py-2 text-center text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                <span className="bg-white px-3 relative z-10">Or custom cloud credentials</span>
-                <hr className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-slate-100 z-0" />
+              <div className="relative py-2 text-center text-[10px] uppercase font-bold tracking-wider text-slate-600">
+                <span className="bg-slate-950 px-3 relative z-10">Or custom cloud credentials</span>
+                <hr className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-slate-900 z-0" />
               </div>
 
               <form onSubmit={handleEmailAuth} className="space-y-3">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                     Owner Email address
                   </label>
                   <input
@@ -546,12 +549,12 @@ export default function AdminPanel({
                     placeholder="you@domain.com"
                     value={authEmail}
                     onChange={(e) => setAuthEmail(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/50"
+                    className="w-full px-3.5 py-2.5 border border-slate-800 rounded-xl text-xs font-medium focus:border-indigo-500 focus:outline-hidden bg-slate-900/60 text-slate-100"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                     Personal master passcode
                   </label>
                   <input
@@ -560,7 +563,7 @@ export default function AdminPanel({
                     placeholder="Secret key"
                     value={authPassword}
                     onChange={(e) => setAuthPassword(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/50"
+                    className="w-full px-3.5 py-2.5 border border-slate-800 rounded-xl text-xs font-medium focus:border-indigo-500 focus:outline-hidden bg-slate-900/60 text-slate-100"
                   />
                 </div>
 
@@ -569,7 +572,7 @@ export default function AdminPanel({
                     id="toggle-auth-mode-btn"
                     type="button"
                     onClick={() => setIsRegistering(!isRegistering)}
-                    className="text-[11px] font-bold text-slate-500 hover:text-slate-800 underline"
+                    className="text-[11px] font-bold text-slate-400 hover:text-white underline cursor-pointer"
                   >
                     {isRegistering ? "Back to Login" : "Register Credentials"}
                   </button>
@@ -577,7 +580,7 @@ export default function AdminPanel({
                     id="submit-auth-btn"
                     type="submit"
                     disabled={authLoading}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs shadow-xs transition-all cursor-pointer"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md hover:shadow-lg transition-all cursor-pointer"
                   >
                     {authLoading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -609,6 +612,7 @@ export default function AdminPanel({
       case 'review-submission': return 'Review Submission';
       case 'casino-analytics': return 'Casino Conversion Analytics';
       case 'sell-requests': return 'Affiliate Sell Requests';
+      case 'banners': return 'Promo Banners Manager';
       case 'links': return 'Affiliate Offers';
       case 'analytics': return 'Performance & Analytics';
       case 'profile': return 'Header & Branding Bio';
@@ -640,7 +644,7 @@ export default function AdminPanel({
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Scrollable Panel Area */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6">
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 space-y-6">
           {/* Quick Statistics (Task 11 Component integration - only on old links/analytics views) */}
           {(activeTab === "links" || activeTab === "analytics") && (
             <DashboardStats
@@ -827,6 +831,8 @@ export default function AdminPanel({
           {activeTab === "casino-analytics" && <CasinoAnalytics />}
 
           {activeTab === "sell-requests" && <SellRequestsManager />}
+
+          {activeTab === "banners" && <BannersManager />}
 
           {/* Active Tab Panel routing */}
           {activeTab === "links" && (

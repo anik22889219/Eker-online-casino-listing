@@ -119,11 +119,11 @@ export const WinnerGallery: React.FC<WinnerGalleryProps> = ({ casinos }) => {
             <div
               id={`win-slip-${win.id}`}
               key={win.id}
-              className="group overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xs hover:shadow-md transition duration-300"
+              className="group overflow-hidden rounded-3xl border border-slate-200/65 bg-white shadow-xs hover:shadow-xl hover:border-slate-300 transition-all duration-400"
             >
               {/* Screenshot Frame */}
               <div 
-                className="relative h-44 w-full overflow-hidden bg-slate-950 cursor-zoom-in group/img"
+                className="relative h-48 w-full overflow-hidden bg-slate-950 cursor-zoom-in group/img"
                 onClick={() => window.open(win.image, "_blank")}
                 title="Click to view full image"
               >
@@ -132,26 +132,37 @@ export const WinnerGallery: React.FC<WinnerGalleryProps> = ({ casinos }) => {
                   alt={`Win screenshot at ${win.casinoName}`}
                   loading="lazy"
                   referrerPolicy="no-referrer"
-                  className="h-full w-full object-contain opacity-90 transition-transform duration-500 group-hover:scale-105"
+                  className="h-full w-full object-contain opacity-85 transition-all duration-700 group-hover/img:scale-105 group-hover/img:opacity-100"
                 />
                 
+                {/* Floating overlay indicators */}
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent opacity-60 group-hover/img:opacity-45 transition-opacity" />
+
+                {/* Hover zoom pill */}
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-all duration-350 scale-95 group-hover/img:scale-100 pointer-events-none">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-950/80 backdrop-blur-md border border-white/10 px-3.5 py-1.5 text-[10px] font-black text-white uppercase tracking-wider">
+                    🔍 Expand Image
+                  </span>
+                </div>
+
                 {/* Float Prize amount banner */}
-                <div className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 bg-emerald-500 text-white rounded-xl px-3.5 py-1 text-xs font-black shadow-lg">
-                  <Coins className="h-3.5 w-3.5" />
-                  <span>${win.amount.toLocaleString()} payout</span>
+                <div className="absolute bottom-3.5 right-3.5 inline-flex items-center gap-1.5 bg-emerald-500 text-white rounded-xl px-3.5 py-1.5 text-[11px] font-black shadow-lg shadow-emerald-500/10">
+                  <Coins className="h-3.5 w-3.5 text-emerald-100 animate-pulse" />
+                  <span>৳{win.amount.toLocaleString()} Payout</span>
                 </div>
               </div>
 
               {/* Detail section */}
-              <div className="p-4 flex items-center justify-between gap-3">
+              <div className="p-5 flex items-center justify-between gap-3 bg-linear-to-b from-white to-slate-50/50">
                 <div className="space-y-1">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Casino Source</span>
-                  <span className="text-sm font-bold text-slate-900 group-hover:text-indigo-600 transition">
+                  <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest block font-mono">Verified Source</span>
+                  <span className="text-sm font-extrabold text-slate-900 group-hover:text-indigo-650 transition">
                     {win.casinoName}
                   </span>
                 </div>
                 <div className="text-right">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-[9px] font-bold text-emerald-700 uppercase tracking-wider">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 text-[9px] font-black text-emerald-700 uppercase tracking-wider shadow-xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
                     Verified
                   </span>
                 </div>

@@ -213,59 +213,6 @@ export default function UserProfileView({ currentUser, userProfile }: UserProfil
         )}
       </div>
 
-      {/* Campaign Submissions Section */}
-      <div className="space-y-4">
-        <h3 className="font-black text-slate-900 text-base flex items-center gap-1.5">
-          <Sparkles className="w-5 h-5 text-indigo-600" />
-          <span>My Verified Campaign Submissions</span>
-        </h3>
-
-        {loadingSubmittals ? (
-          <div className="bg-white border border-slate-150 p-12 text-center rounded-2xl italic text-xs text-slate-400">
-            Retrieving submissions from Eker Vault...
-          </div>
-        ) : submittals.length === 0 ? (
-          <div className="bg-white border border-slate-200 p-8 text-center rounded-3xl space-y-3">
-            <div className="h-10 w-10 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center text-slate-300 mx-auto">
-              <Clock className="w-5 h-5" />
-            </div>
-            <p className="text-xs text-slate-500 font-semibold">No submissions found.</p>
-            <p className="text-[11px] text-slate-400 leading-normal max-w-sm mx-auto">
-              Have you hit a massive jackpot or qualified for custom bonuses on our partner casinos? Submit proof to receive exclusive brokerage rewards.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {submittals.map((item) => (
-              <div key={item.id} className="bg-white border border-slate-200 rounded-3xl p-5 space-y-3 shadow-xs flex flex-col justify-between">
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">ID: {item.id.slice(0, 8)}</span>
-                    <span className={`px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider
-                      ${item.status === "approved" ? "bg-emerald-50 text-emerald-700 border border-emerald-100" :
-                        item.status === "pending" ? "bg-amber-50 text-amber-700 border border-amber-100" :
-                        "bg-slate-50 text-slate-500 border border-slate-100"}`}
-                    >
-                      {item.status || "Pending Vetting"}
-                    </span>
-                  </div>
-                  <h4 className="font-bold text-slate-900 text-sm leading-tight">
-                    {item.casinoName || "Partner Casino Review"}
-                  </h4>
-                  <p className="text-xs text-slate-500 leading-normal font-semibold">
-                    {item.reviewText || "Jackpot win verification submission."}
-                  </p>
-                </div>
-
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-bold font-mono">
-                  <span>Win amount: {item.multiplier ? `${item.multiplier}x` : "Verified Play"}</span>
-                  <span>{item.createdAt ? new Date(item.createdAt).toLocaleDateString() : "Pending"}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

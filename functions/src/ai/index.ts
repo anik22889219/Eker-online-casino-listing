@@ -16,11 +16,118 @@ function isValidUrl(urlStr: string): boolean {
 }
 
 /**
+ * Validates whether a scraped URL actually exists and returns an image
+ */
+async function checkUrlIsLiveImage(url: string): Promise<boolean> {
+  if (!url) return false;
+  if (url.startsWith("data:")) return false;
+  try {
+    const response = await fetch(url, {
+      method: "HEAD",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+      },
+      signal: AbortSignal.timeout(3000)
+    });
+    const contentType = response.headers.get("content-type") || "";
+    if (response.ok && (contentType.includes("image") || contentType.includes("octet-stream") || url.endsWith(".ico") || url.endsWith(".png") || url.endsWith(".svg"))) {
+      return true;
+    }
+  } catch (e) {
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+        },
+        signal: AbortSignal.timeout(3000)
+      });
+      if (response.ok) {
+        return true;
+      }
+    } catch (err) {}
+  }
+  return false;
+}
+
+/**
+ * Fetch logo using Logo/Favicon APIs (Highly reliable, bypasses Cloudflare)
+ */
+async function getLogoFromApis(domain: string): Promise<string | null> {
+  const providers = [
+    {
+      name: "Google FaviconV2 API",
+      url: `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://${domain}&size=128`
+    },
+    {
+      name: "Clearbit Logo API",
+      url: `https://logo.clearbit.com/${domain}`
+    },
+    {
+      name: "Google Standard Favicon API",
+      url: `https://www.google.com/s2/favicons?sz=128&domain=${domain}`
+    },
+    {
+      name: "Favicon Kit API",
+      url: `https://api.faviconkit.com/${domain}/144`
+    },
+    {
+      name: "DuckDuckGo Icon API",
+      url: `https://icons.duckduckgo.com/ip3/${domain}.ico`
+    }
+  ];
+
+  for (const provider of providers) {
+    try {
+      const response = await fetch(provider.url, {
+        method: "HEAD",
+        headers: { "User-Agent": "Mozilla/5.0" },
+        signal: AbortSignal.timeout(3000)
+      });
+      const contentType = response.headers.get("content-type") || "";
+      const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
+      if (response.ok && contentType.includes("image") && contentLength > 300) {
+        functions.logger.info(`  [✓] Logo found via ${provider.name} (length: ${contentLength})`);
+        return provider.url;
+      }
+    } catch (e) {}
+
+    try {
+      const response = await fetch(provider.url, {
+        method: "GET",
+        headers: { "User-Agent": "Mozilla/5.0" },
+        signal: AbortSignal.timeout(3000)
+      });
+      const contentType = response.headers.get("content-type") || "";
+      const buffer = await response.arrayBuffer();
+      const contentLength = buffer ? buffer.byteLength : 0;
+      if (response.ok && contentType.includes("image") && contentLength > 300) {
+        functions.logger.info(`  [✓] Logo found via ${provider.name} (GET fallback) (length: ${contentLength})`);
+        return provider.url;
+      }
+    } catch (err) {}
+  }
+  return null;
+}
+
+/**
  * Attempts to fetch website metadata from the target affiliate URL.
  * Fails gracefully and returns a partial/empty object on error.
  */
 async function fetchWebsiteMetadata(url: string) {
   try {
+    let domain = "";
+    try {
+      const urlObj = new URL(url);
+      domain = urlObj.hostname.replace("www.", "");
+    } catch (e) {}
+
+    // 1. Try fetching logo via general Favicon APIs first
+    let apiLogo: string | null = null;
+    if (domain) {
+      apiLogo = await getLogoFromApis(domain);
+    }
+
     const response = await fetch(url, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
@@ -29,7 +136,7 @@ async function fetchWebsiteMetadata(url: string) {
     });
 
     if (!response.ok) {
-      return {};
+      return apiLogo ? { bestLogo: apiLogo } : {};
     }
 
     const html = await response.text();
@@ -64,17 +171,8 @@ async function fetchWebsiteMetadata(url: string) {
     const canonical = getLink("canonical") || "";
     const appleTouchIcon = getLink("apple-touch-icon") || getLink("apple-touch-icon-precomposed") || "";
 
-    // Search for img tags containing 'logo' or 'brand'
-    const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
-    let match;
-    const logoCandidates: string[] = [];
-    while ((match = imgRegex.exec(html)) !== null) {
-      const src = match[1];
-      const fullTag = match[0];
-      if (src && (src.toLowerCase().includes("logo") || fullTag.toLowerCase().includes("logo") || fullTag.toLowerCase().includes("brand"))) {
-        logoCandidates.push(src);
-      }
-    }
+    const urlObj = new URL(url);
+    const baseUrl = `${urlObj.protocol}//${urlObj.hostname}`;
 
     const resolveUrl = (baseUrl: string, targetPath: string) => {
       if (!targetPath) return "";
@@ -85,23 +183,123 @@ async function fetchWebsiteMetadata(url: string) {
       }
     };
 
-    let bestLogo = "";
-    if (logoCandidates.length > 0) {
+    // 2. Perform deep scans in HTML if apiLogo didn't work
+    let bestLogo = apiLogo || "";
+
+    if (!bestLogo && appleTouchIcon) {
+      const resolved = resolveUrl(url, appleTouchIcon);
+      if (await checkUrlIsLiveImage(resolved)) {
+        bestLogo = resolved;
+      }
+    }
+
+    if (!bestLogo && ogImage) {
+      const resolved = resolveUrl(url, ogImage);
+      if (await checkUrlIsLiveImage(resolved)) {
+        bestLogo = resolved;
+      }
+    }
+
+    // Scan img tags for logo keyword
+    if (!bestLogo) {
+      const imgRegex = /<img([^>]+)>/gi;
+      let match;
+      const logoCandidates: string[] = [];
+      while ((match = imgRegex.exec(html)) !== null) {
+        const attrsStr = match[1];
+        const srcMatch = attrsStr.match(/src=["']([^"']+)["']/i);
+        const dataSrcMatch = attrsStr.match(/(?:data-src|data-lazy-src|data-original|lazy-src|srcset)=["']([^"']+)["']/i);
+        const altMatch = attrsStr.match(/alt=["']([^"']+)["']/i);
+        const classMatch = attrsStr.match(/class=["']([^"']+)["']/i);
+
+        const alt = altMatch ? altMatch[1].toLowerCase() : "";
+        const className = classMatch ? classMatch[1].toLowerCase() : "";
+        const src = srcMatch ? srcMatch[1] : "";
+        const dataSrc = dataSrcMatch ? dataSrcMatch[1] : "";
+
+        let imgUrl = "";
+        if (dataSrc && !dataSrc.startsWith("data:")) {
+          imgUrl = dataSrc;
+        } else if (src && !src.startsWith("data:")) {
+          imgUrl = src;
+        }
+
+        if (imgUrl) {
+          const lowerUrl = imgUrl.toLowerCase();
+          const isLogo = lowerUrl.includes("logo") || alt.includes("logo") || className.includes("logo") ||
+                         lowerUrl.includes("brand") || alt.includes("brand") || className.includes("brand");
+          if (isLogo) {
+            const resolved = resolveUrl(url, imgUrl.trim());
+            if (resolved) {
+              logoCandidates.push(resolved);
+            }
+          }
+        }
+      }
+
       for (const cand of logoCandidates) {
-        const resolved = resolveUrl(url, cand);
-        if (resolved) {
-          bestLogo = resolved;
+        if (await checkUrlIsLiveImage(cand)) {
+          bestLogo = cand;
           break;
         }
       }
     }
 
-    if (!bestLogo && appleTouchIcon) {
-      bestLogo = resolveUrl(url, appleTouchIcon);
+    // 3. Fallback: Search in Mobile App/SPA Bundles (Extremely powerful for modern casinos like 10tk688)
+    if (!bestLogo) {
+      try {
+        functions.logger.info(`  [~] Cloud Function: Attempting Mobile SPA CSS deep search...`);
+        const mobileIndexUrl = `${baseUrl}/m/index.html`;
+        const mobileRes = await fetch(mobileIndexUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1"
+          },
+          signal: AbortSignal.timeout(5000)
+        });
+        if (mobileRes.ok) {
+          const mHtml = await mobileRes.text();
+          const cssMatches = mHtml.match(/href=["']([^"']+\.css)["']/gi);
+          if (cssMatches) {
+            for (const matchStr of cssMatches) {
+              const cssPathMatch = matchStr.match(/href=["']([^"']+\.css)["']/i);
+              if (cssPathMatch && cssPathMatch[1]) {
+                const cssPath = cssPathMatch[1];
+                let fullCssUrl = cssPath;
+                if (cssPath.startsWith("/")) {
+                  fullCssUrl = `${baseUrl}${cssPath}`;
+                } else if (!cssPath.startsWith("http")) {
+                  fullCssUrl = `${baseUrl}/m/${cssPath}`;
+                }
+
+                try {
+                  const cssRes = await fetch(fullCssUrl, { signal: AbortSignal.timeout(4000) });
+                  if (cssRes.ok) {
+                    const cssContent = await cssRes.text();
+                    const logoUrlMatch = cssContent.match(/url\(([^)]+?logo[^)]+?)\)/i);
+                    if (logoUrlMatch) {
+                      const cleanedLogoPath = logoUrlMatch[1].replace(/['"]/g, "").trim();
+                      let resolvedLogoUrl = cleanedLogoPath;
+                      if (cleanedLogoPath.startsWith("/")) {
+                        resolvedLogoUrl = `${baseUrl}${cleanedLogoPath}`;
+                      } else if (!cleanedLogoPath.startsWith("http")) {
+                        resolvedLogoUrl = `${baseUrl}/m/${cleanedLogoPath}`;
+                      }
+
+                      if (await checkUrlIsLiveImage(resolvedLogoUrl)) {
+                        functions.logger.info(`  [✓] SPA logo extracted from CSS: ${resolvedLogoUrl}`);
+                        bestLogo = resolvedLogoUrl;
+                        break;
+                      }
+                    }
+                  }
+                } catch (cssErr) {}
+              }
+            }
+          }
+        }
+      } catch (mobileErr) {}
     }
-    if (!bestLogo && ogImage) {
-      bestLogo = resolveUrl(url, ogImage);
-    }
+
     if (!bestLogo && favicon) {
       bestLogo = resolveUrl(url, favicon);
     }
@@ -514,5 +712,118 @@ export const crawlWebsiteLogoAndName = functions.https.onCall(async (data, conte
     name,
     logoUrl: finalLogoUrl
   };
+});
+
+/**
+ * Callable function to analyze an uploaded banner image and automatically find/extract 
+ * the Deal Promo Tag / Welcome Slogan using Gemini 2.5 Flash.
+ */
+export const extractPromoFromBanner = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Authentication is required.");
+  }
+
+  const db = admin.firestore();
+  const callerId = context.auth.uid;
+
+  const userSnap = await db.collection("users").doc(callerId).get();
+  if (!userSnap.exists) {
+    throw new functions.https.HttpsError("permission-denied", "User profile not found.");
+  }
+
+  const userRole = userSnap.data()?.role;
+  if (userRole !== "admin" && userRole !== "super_admin") {
+    throw new functions.https.HttpsError("permission-denied", "Only administrators can trigger AI content generation.");
+  }
+
+  const { bannerImageUrl } = data;
+  if (!bannerImageUrl) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing required bannerImageUrl parameter.");
+  }
+
+  if (!isValidUrl(bannerImageUrl)) {
+    throw new functions.https.HttpsError("invalid-argument", "The provided banner image URL is not valid.");
+  }
+
+  functions.logger.info(`Extracting promo deal/slogan from banner image: ${bannerImageUrl}`);
+
+  let base64Data = "";
+  let mimeType = "image/jpeg";
+  try {
+    const response = await fetch(bannerImageUrl, {
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: status ${response.status}`);
+    }
+    const contentType = response.headers.get("content-type") || "image/jpeg";
+    mimeType = contentType;
+    const arrayBuffer = await response.arrayBuffer();
+    base64Data = Buffer.from(arrayBuffer).toString("base64");
+  } catch (err: any) {
+    functions.logger.error("Failed to download or convert banner image:", err);
+    throw new functions.https.HttpsError("internal", `Failed to process banner image: ${err.message || err}`);
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new functions.https.HttpsError("failed-precondition", "Gemini API configuration is missing on the server.");
+  }
+
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        "User-Agent": "aistudio-build"
+      }
+    }
+  });
+
+  const responseSchema = {
+    type: Type.OBJECT,
+    properties: {
+      welcomeSlogan: { 
+        type: Type.STRING, 
+        description: "The primary deal promotion tag, welcome slogan, or bonus offer visible in the banner image. Ensure it is clean, catchy, and represents the key offer (e.g., '100% Up To $1000 + 50 Free Spins' or '10% Weekly Cashback'). Extract only what is written or strongly implied in the banner image. Keep it concise." 
+      }
+    },
+    required: ["welcomeSlogan"]
+  };
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          inlineData: {
+            mimeType,
+            data: base64Data
+          }
+        },
+        "Analyze this casino promotion banner image. Identify and extract the main welcome bonus offer, promotion deal, or welcome slogan displayed on it. Return a clean, concise, and catchy promo tag or slogan representing the offer, like '100% Up To $1000' or '$500 Welcome Bonus' or similar."
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema
+      }
+    });
+
+    const text = response.text;
+    if (!text) {
+      throw new Error("Empty text returned from Gemini API.");
+    }
+
+    const output = JSON.parse(text.trim());
+    return {
+      success: true,
+      welcomeSlogan: output.welcomeSlogan || "Exclusive Deposit Bonus"
+    };
+  } catch (error: any) {
+    functions.logger.error("Gemini welcome slogan extraction failed:", error);
+    if (error?.message?.includes("quota") || error?.message?.includes("429")) {
+      throw new functions.https.HttpsError("resource-exhausted", "Gemini API quota exceeded. Please try again later.");
+    }
+    throw new functions.https.HttpsError("internal", `Gemini extraction failed: ${error?.message || error}`);
+  }
 });
 

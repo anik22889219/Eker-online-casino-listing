@@ -457,29 +457,29 @@ function AppContent() {
     const innerLayout = (
       <>
         {!hideHeader && (
-          <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-100 shrink-0">
+          <header className="sticky top-0 z-40 bg-white/75 backdrop-blur-xl border-b border-slate-200/50 shrink-0 transition-all duration-300">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {/* Hamburger menu for Admin Sidebar on Mobile */}
                 {currentUser && isAdmin && (
                   <button
                     onClick={() => window.dispatchEvent(new Event('toggle-admin-sidebar'))}
-                    className="md:hidden p-2 -ml-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                    className="md:hidden p-2 -ml-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 rounded-xl transition cursor-pointer"
                     aria-label="Open Admin Menu"
                   >
                     <Menu className="w-5 h-5" />
                   </button>
                 )}
 
-                <Link to="/" className="flex items-center gap-2">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md">
+                <Link to="/" className="flex items-center gap-3 group">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br from-indigo-500 to-indigo-700 text-white shadow-sm transition-transform duration-300 group-hover:scale-105 group-hover:rotate-3">
                     <Coins className="h-5 w-5" />
                   </div>
                   <div>
-                    <span className="font-sans font-black text-base tracking-tight text-slate-900 leading-none block">
+                    <span className="font-display font-extrabold text-base tracking-tight text-slate-900 leading-none block">
                       Eker Listings
                     </span>
-                    <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-indigo-600 block mt-0.5">
+                    <span className="text-[9px] font-mono font-bold uppercase tracking-widest text-indigo-600 block mt-1">
                       {window.location.pathname.startsWith("/admin") ? "Admin Workspace" : "Verified Casino Broker"}
                     </span>
                   </div>
@@ -488,47 +488,31 @@ function AppContent() {
                 {/* Show the active admin page tab title on desktop next to logo */}
                 {window.location.pathname.startsWith("/admin") && (
                   <div className="hidden md:flex items-center gap-2 ml-4 pl-4 border-l border-slate-200">
-                    <span className="text-xs font-bold text-slate-650 bg-slate-100 px-3 py-1 rounded-lg">
+                    <span className="text-[10px] uppercase font-black tracking-widest text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-100/50">
                       {adminHeaderTitle}
                     </span>
                   </div>
                 )}
 
                 {/* Desktop horizontal navigation links (Main Menu) */}
-                <nav className="hidden md:flex items-center gap-6 ml-8 font-sans">
+                <nav className="hidden md:flex items-center gap-1.5 ml-10 font-sans">
                   <Link
                     to="/"
-                    className={`text-xs font-bold transition-all ${
+                    className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
                       window.location.pathname === "/"
-                        ? "text-indigo-600 border-b-2 border-indigo-600 pb-1"
-                        : "text-slate-500 hover:text-slate-900"
+                        ? "text-indigo-600 bg-indigo-50/50"
+                        : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"
                     }`}
                   >
                     Home
                   </Link>
 
-                  <button
-                    onClick={() => {
-                      navigate("/");
-                      setTimeout(() => {
-                        const searchInput = document.getElementById("hero-search");
-                        if (searchInput) {
-                          searchInput.focus();
-                          searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }
-                      }, 200);
-                    }}
-                    className="text-xs font-bold text-slate-500 hover:text-slate-900 cursor-pointer"
-                  >
-                    Search
-                  </button>
-
                   <Link
                     to="/blog"
-                    className={`text-xs font-bold transition-all ${
+                    className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
                       window.location.pathname === "/blog"
-                        ? "text-indigo-600 border-b-2 border-indigo-600 pb-1"
-                        : "text-slate-500 hover:text-slate-900"
+                        ? "text-indigo-600 bg-indigo-50/50"
+                        : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"
                     }`}
                   >
                     Blog
@@ -538,10 +522,10 @@ function AppContent() {
                   {currentUser && isAdmin ? (
                     <Link
                       to="/admin"
-                      className={`text-xs font-bold transition-all ${
+                      className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
                         window.location.pathname.startsWith("/admin")
-                          ? "text-indigo-600 border-b-2 border-indigo-600 pb-1"
-                          : "text-slate-500 hover:text-slate-900"
+                          ? "text-indigo-600 bg-indigo-50/50"
+                          : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"
                       }`}
                     >
                       Creator Portal
@@ -550,10 +534,10 @@ function AppContent() {
                     <>
                       <Link
                         to="/contact"
-                        className={`text-xs font-bold transition-all ${
+                        className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
                           window.location.pathname === "/contact"
-                            ? "text-indigo-600 border-b-2 border-indigo-600 pb-1"
-                            : "text-slate-500 hover:text-slate-900"
+                            ? "text-indigo-600 bg-indigo-50/50"
+                            : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"
                         }`}
                       >
                         Contact Us
@@ -562,10 +546,10 @@ function AppContent() {
                       {currentUser && (
                         <Link
                           to="/profile"
-                          className={`text-xs font-bold transition-all ${
+                          className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
                             window.location.pathname === "/profile"
-                              ? "text-indigo-600 border-b-2 border-indigo-600 pb-1"
-                              : "text-slate-500 hover:text-slate-900"
+                              ? "text-indigo-600 bg-indigo-50/50"
+                              : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"
                           }`}
                         >
                           Profile
@@ -758,24 +742,6 @@ function AppContent() {
               <Home className="h-5 w-5" />
               <span>Home</span>
             </Link>
-            
-            <button
-              id="mobile-search-trigger-btn"
-              onClick={() => {
-                navigate("/");
-                setTimeout(() => {
-                  const searchInput = document.getElementById("hero-search");
-                  if (searchInput) {
-                    searchInput.focus();
-                    searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  }
-                }, 100);
-              }}
-              className="flex flex-col items-center justify-center gap-1 text-[10px] font-bold text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
-            >
-              <Search className="h-5 w-5" />
-              <span>Search</span>
-            </button>
 
             <Link
               to="/blog"
