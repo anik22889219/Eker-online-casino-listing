@@ -37,7 +37,6 @@ import {
   Flame,
   RefreshCw,
   Layers,
-  Trophy,
   MessageSquare,
   UploadCloud,
   CheckCircle,
@@ -62,7 +61,6 @@ export const CasinoDetails: React.FC<CasinoDetailsProps> = ({ deals = [], onGoTo
   // Core Data States
   const [casino, setCasino] = useState<Casino | null>(null);
   const [loading, setLoading] = useState(true);
-  const [jackpots, setJackpots] = useState<JackpotScreenshot[]>([]);
   const [activeBonuses, setActiveBonuses] = useState<Bonus[]>([]);
   const [relatedCasinos, setRelatedCasinos] = useState<Casino[]>([]);
 
@@ -74,12 +72,6 @@ export const CasinoDetails: React.FC<CasinoDetailsProps> = ({ deals = [], onGoTo
   const [reviewComment, setReviewComment] = useState<string>("");
   const [userExistingReview, setUserExistingReview] = useState<Review | null>(null);
   const [userExistingRating, setUserExistingRating] = useState<Rating | null>(null);
-
-  // Screenshot Upload Form states
-  const [isUploadingWin, setIsUploadingWin] = useState(false);
-  const [winAmount, setWinAmount] = useState<string>("");
-  const [winFile, setWinFile] = useState<File | null>(null);
-  const [winUploadLoading, setWinUploadLoading] = useState(false);
 
   // Action Banners
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
@@ -177,20 +169,6 @@ export const CasinoDetails: React.FC<CasinoDetailsProps> = ({ deals = [], onGoTo
   useEffect(() => {
     if (!casino) return;
 
-    // A. Jackpots
-    const qJackpots = query(
-      collection(db, "jackpotScreenshots"),
-      where("casinoId", "==", casino.id),
-      where("approved", "==", true)
-    );
-    const unsubJackpots = onSnapshot(qJackpots, (snap) => {
-      const list: JackpotScreenshot[] = [];
-      snap.forEach((doc) => {
-        list.push({ id: doc.id, ...doc.data() } as JackpotScreenshot);
-      });
-      setJackpots(list);
-    });
-
     // B. Related Casinos in same category (limit to 3)
     const qRelated = query(
       collection(db, "casinos"),
@@ -254,7 +232,6 @@ export const CasinoDetails: React.FC<CasinoDetailsProps> = ({ deals = [], onGoTo
     });
 
     return () => {
-      unsubJackpots();
       unsubRelated();
       unsubBonuses();
       unsubReviews();
@@ -384,47 +361,6 @@ export const CasinoDetails: React.FC<CasinoDetailsProps> = ({ deals = [], onGoTo
     }
   };
 
-  // 7. Submit Win Screenshot Proof (Part 5)
-  const handleWinProofSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentUser || !casino) return;
-
-    if (!winAmount || !winFile) {
-      setActionError("Please specify a prize amount and upload a proof screenshot.");
-      return;
-    }
-
-    setWinUploadLoading(true);
-    setActionError(null);
-    setActionSuccess(null);
-
-    try {
-      // A. Upload image to Cloudinary
-      const imageUrl = await uploadToCloudinary(winFile, "jackpots");
-      if (!imageUrl) throw new Error("Image hosting upload failed. Verify API configuration.");
-
-      // B. Save screenshot document to collection
-      await addDoc(collection(db, "jackpotScreenshots"), {
-        casinoId: casino.id,
-        image: imageUrl,
-        amount: Number(winAmount),
-        approved: false, // Starts as pending moderation
-        uploadedBy: currentUser.uid,
-        uploadedAt: new Date().toISOString(),
-      });
-
-      setActionSuccess("Proof uploaded successfully! A moderator will verify your payout shortly.");
-      setWinAmount("");
-      setWinFile(null);
-      setIsUploadingWin(false);
-    } catch (err: any) {
-      console.error(err);
-      setActionError(err.message || "Failed to submit win screenshot proof.");
-    } finally {
-      setWinUploadLoading(false);
-    }
-  };
-
   // Visit Affiliate link
   const handleVisitClick = () => {
     if (!casino) return;
@@ -443,9 +379,31 @@ export const CasinoDetails: React.FC<CasinoDetailsProps> = ({ deals = [], onGoTo
     }
   };
 
-  // Filter approved reviews for public rendering
+  // Filter approved reviews for public rendering and parse any sell request attributes
   const approvedReviews = useMemo(() => {
-    return reviews.filter((r) => r.approved);
+    return reviews
+      .filter((r) => r.approved)
+      .map((r) => {
+        const isSellRequest = r.title && r.title.startsWith("Verified Win:");
+        let displayName = "Verified Player";
+        let displayTitle = r.title;
+
+        if (isSellRequest) {
+          const parts = r.title.split(" | By ");
+          if (parts.length > 1) {
+            displayName = parts[1];
+            displayTitle = parts[0];
+          }
+        }
+
+        return {
+          ...r,
+          isSellRequest,
+          displayName,
+          displayTitle,
+        };
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [reviews]);
 
   if (loading) {
@@ -663,22 +621,13 @@ export const CasinoDetails: React.FC<CasinoDetailsProps> = ({ deals = [], onGoTo
         <div className="lg:col-span-2 space-y-10">
           
           {/* Active Bonuses promotions section (Part 4) */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-              <Percent className="h-5.5 w-5.5 text-indigo-600" />
-              <h3 className="font-sans font-black text-slate-900 text-base sm:text-lg">Active Promotions & Codes</h3>
-            </div>
-
-            {activeBonuses.length === 0 ? (
-              <div className="bg-slate-50 border border-slate-150 rounded-2xl p-6 text-center text-slate-500 text-xs">
-                <Percent className="h-8 w-8 text-slate-300 mx-auto mb-1.5" />
-                <p className="font-bold">No custom promo campaigns active at this time.</p>
-                <p className="text-slate-400 mt-0.5">Use the link below to visit and claim standard signup rewards.</p>
-                <button onClick={handleVisitClick} className="mt-3.5 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-100 transition text-[11px]">
-                  Visit Signup Portal
-                </button>
+          {activeBonuses.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+                <Percent className="h-5.5 w-5.5 text-indigo-600" />
+                <h3 className="font-sans font-black text-slate-900 text-base sm:text-lg">Active Promotions & Codes</h3>
               </div>
-            ) : (
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {activeBonuses.map((b) => (
                   <div key={b.id} className="bg-gradient-to-b from-white to-slate-50 border border-slate-200 rounded-2xl p-4 hover:shadow-sm transition flex flex-col justify-between">
@@ -707,8 +656,8 @@ export const CasinoDetails: React.FC<CasinoDetailsProps> = ({ deals = [], onGoTo
                   </div>
                 ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Expert Manual Review text block */}
           {casino.manualReview && (
@@ -723,76 +672,36 @@ export const CasinoDetails: React.FC<CasinoDetailsProps> = ({ deals = [], onGoTo
             </div>
           )}
 
-          {/* Player Win Slips Gallery (Part 5) */}
-          <div className="space-y-5 bg-white border border-slate-150 rounded-3xl p-5 sm:p-7 shadow-xs">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="h-8 w-8 rounded-lg bg-amber-50 text-amber-500 border border-amber-100 flex items-center justify-center shrink-0 shadow-xs">
-                  <Trophy className="h-4.5 w-4.5" />
+          {/* Player Reviews & Ratings Vetting Desk (Part 1 & 2) */}
+          {approvedReviews.length > 0 && (
+            <div className="space-y-5 bg-white border border-slate-150 rounded-3xl p-5 sm:p-7 shadow-xs">
+              <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
+                <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center shrink-0 shadow-xs">
+                  <MessageSquare className="h-4.5 w-4.5" />
                 </div>
                 <div className="space-y-0.5">
-                  <h3 className="font-sans font-black text-slate-900 text-sm sm:text-base leading-tight">Player Payout Slips</h3>
-                  <p className="text-[10px] font-semibold text-slate-400 leading-none">Verified moderator-approved payouts</p>
+                  <h3 className="font-sans font-black text-slate-900 text-sm sm:text-base leading-tight font-display">Player Testimonials & Ratings</h3>
+                  <p className="text-[10px] font-semibold text-slate-400 leading-none">Vetted and verified community reviews</p>
                 </div>
               </div>
-            </div>
 
-            {jackpots.length === 0 ? (
-              <div className="bg-slate-50/50 border border-dashed border-slate-200 rounded-2xl p-8 text-center text-slate-400 text-xs">
-                <Trophy className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-                <p className="font-bold text-slate-700">No payout slips published yet.</p>
-                <p className="text-slate-400 mt-1 max-w-sm mx-auto">Moderators publish win slips under the Jackpot Proof tab once verified by API telemetry.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {jackpots.map((jk) => (
-                  <div key={jk.id} className="overflow-hidden rounded-2xl border border-slate-150 bg-white shadow-xs group relative">
-                    <div className="relative h-44 w-full overflow-hidden bg-slate-950">
-                      <img src={jk.image} alt="Verified player jackpot payout slip" loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover group-hover:scale-102 transition duration-300" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent" />
-                      <div className="absolute bottom-3 right-3 bg-emerald-600 border border-emerald-500 text-white font-black text-xs px-2.5 py-1 rounded-lg shadow-md font-mono">
-                        Payout: ${Number(jk.amount).toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+              {/* Public Approved Reviews List (Part 2) */}
+              <div className="space-y-4">
+                <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Approved Player Reviews ({approvedReviews.length})</h5>
 
-          {/* Player Reviews & Ratings Vetting Desk (Part 1 & 2) */}
-          <div className="space-y-5 bg-white border border-slate-150 rounded-3xl p-5 sm:p-7 shadow-xs">
-            <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
-              <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center shrink-0 shadow-xs">
-                <MessageSquare className="h-4.5 w-4.5" />
-              </div>
-              <div className="space-y-0.5">
-                <h3 className="font-sans font-black text-slate-900 text-sm sm:text-base leading-tight font-display">Player Testimonials & Ratings</h3>
-                <p className="text-[10px] font-semibold text-slate-400 leading-none">Vetted and verified community reviews</p>
-              </div>
-            </div>
-
-            {/* Public Approved Reviews List (Part 2) */}
-            <div className="space-y-4">
-              <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Approved Player Reviews ({approvedReviews.length})</h5>
-
-              {approvedReviews.length === 0 ? (
-                <div className="bg-slate-50/50 border border-dashed border-slate-200 rounded-2xl p-8 text-center text-slate-400 text-xs">
-                  <MessageSquare className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-                  <p className="font-bold text-slate-700">No testimonials published yet.</p>
-                  <p className="text-slate-400 mt-1 max-w-sm mx-auto">Once reviews undergo standard compliance and proof checks, they will appear here instantly.</p>
-                </div>
-              ) : (
                 <div className="space-y-4">
                   {approvedReviews.map((rev) => (
                     <div key={rev.id} className="bg-white border border-slate-150 rounded-2xl p-4 sm:p-5 hover:border-slate-300 transition duration-150 space-y-3.5 animate-fade-in shadow-xs">
                       <div className="flex items-start justify-between gap-3 flex-wrap">
                         <div className="space-y-1">
-                          <h6 className="font-sans font-black text-slate-900 text-xs sm:text-sm leading-snug">{rev.title}</h6>
+                          <h6 className="font-sans font-black text-slate-900 text-xs sm:text-sm leading-snug">{(rev as any).displayTitle || rev.title}</h6>
                           <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-bold flex-wrap">
-                            <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border border-emerald-100 flex items-center gap-0.5">
-                              <CheckCircle className="h-2.5 w-2.5 text-emerald-600" />
-                              Verified Player
+                            <span className="text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border border-slate-200">
+                              {(rev as any).displayName || "Verified Player"}
+                            </span>
+                            <span className={`${(rev as any).isSellRequest ? "text-amber-700 bg-amber-50 border-amber-100" : "text-emerald-700 bg-emerald-50 border-emerald-100"} px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border flex items-center gap-0.5`}>
+                              <CheckCircle className={`h-2.5 w-2.5 ${(rev as any).isSellRequest ? "text-amber-600" : "text-emerald-600"}`} />
+                              {(rev as any).isSellRequest ? "Verified Win Seller" : "Verified Player"}
                             </span>
                             <span>•</span>
                             <span className="text-slate-400 font-medium">{new Date(rev.createdAt).toLocaleDateString(undefined, { dateStyle: "medium" })}</span>
@@ -845,9 +754,9 @@ export const CasinoDetails: React.FC<CasinoDetailsProps> = ({ deals = [], onGoTo
                     </div>
                   ))}
                 </div>
-              )}
+              </div>
             </div>
-          </div>
+          )}
 
         </div>
 

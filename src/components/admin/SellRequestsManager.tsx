@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { db } from "../../firebase";
+import { db, auth } from "../../firebase";
 import {
   collection,
   onSnapshot,
   doc,
   updateDoc,
   deleteDoc,
+  setDoc,
   serverTimestamp,
 } from "firebase/firestore";
 import {
@@ -37,17 +38,22 @@ interface SellRequest {
   amount: number;
   message: string;
   status: "pending" | "approved" | "rejected";
+  createdAt?: string;
 }
 
 export const SellRequestsManager: React.FC = () => {
   const [requests, setRequests] = useState<SellRequest[]>([]);
+  const [casinos, setCasinos] = useState<any[]>([]);
+  const [reviews, setReviews] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [activeRequest, setActiveRequest] = useState<SellRequest | null>(null);
 
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
+  const [requestToDelete, setRequestToDelete] = useState<{ id: string; casinoName: string } | null>(null);
 
+  // 1. Subscribe to sellRequests
   useEffect(() => {
     const unsub = onSnapshot(
       collection(db, "sellRequests"),
@@ -68,6 +74,106 @@ export const SellRequestsManager: React.FC = () => {
     return () => unsub();
   }, []);
 
+  // 2. Subscribe to casinos to map brand name to brand ID
+  useEffect(() => {
+    const unsubCasinos = onSnapshot(
+      collection(db, "casinos"),
+      (snap) => {
+        const list: any[] = [];
+        snap.forEach((d) => {
+          const data = d.data();
+          if (!data.isDeleted) {
+            list.push({ id: d.id, ...data });
+          }
+        });
+        setCasinos(list);
+      },
+      (err) => {
+        console.error("Casinos subscription error:", err);
+      }
+    );
+    return () => unsubCasinos();
+  }, []);
+
+  // 3. Subscribe to reviews to perform public synchronization check
+  useEffect(() => {
+    const unsubReviews = onSnapshot(
+      collection(db, "reviews"),
+      (snap) => {
+        const list: any[] = [];
+        snap.forEach((d) => {
+          list.push({ id: d.id, ...d.data() });
+        });
+        setReviews(list);
+      },
+      (err) => {
+        console.error("Reviews subscription error:", err);
+      }
+    );
+    return () => unsubReviews();
+  }, []);
+
+  // 4. Auto-sync approved sell requests to public reviews collection
+  useEffect(() => {
+    if (requests.length > 0 && casinos.length > 0) {
+      requests.forEach(async (req) => {
+        if (req.status === "approved") {
+          const reviewExists = reviews.some((r) => r.id === req.id);
+          if (!reviewExists) {
+            console.log(`Auto-syncing approved sell request ${req.id} to public reviews...`);
+            const cleanString = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+            const matchingCasino = casinos.find(
+              (c) => cleanString(c.casinoName) === cleanString(req.casinoName) ||
+                     cleanString(c.casinoName).includes(cleanString(req.casinoName)) ||
+                     cleanString(req.casinoName).includes(cleanString(c.casinoName))
+            );
+            const casinoId = matchingCasino ? matchingCasino.id : "unknown";
+
+            try {
+              const reviewData: any = {
+                casinoId,
+                casinoName: req.casinoName,
+                userId: auth.currentUser?.uid || "admin_sync",
+                rating: 5,
+                title: `Verified Win: ৳${req.amount} | By ${req.name}`,
+                comment: req.message || "Winning screenshot proof submitted.",
+                approved: true,
+                createdAt: req.dateTime || req.createdAt || new Date().toISOString(),
+              };
+              if (req.screenshot) {
+                reviewData.jackpotScreenshot = req.screenshot;
+              }
+              if (req.balanceScreenshot) {
+                reviewData.balanceScreenshot = req.balanceScreenshot;
+              }
+              await setDoc(doc(db, "reviews", req.id), reviewData);
+            } catch (err) {
+              console.error("Failed to auto-sync approved sell request to reviews:", err);
+            }
+          }
+        }
+      });
+    }
+  }, [requests, reviews, casinos]);
+
+  // 5. Auto-delete public reviews for non-approved or deleted sell requests
+  useEffect(() => {
+    if (requests.length > 0 && reviews.length > 0) {
+      reviews.forEach(async (rev) => {
+        // If the review ID is a sell request ID
+        const correspondingReq = requests.find((r) => r.id === rev.id);
+        if (correspondingReq && correspondingReq.status !== "approved") {
+          console.log(`Auto-removing review for non-approved sell request ${rev.id}...`);
+          try {
+            await deleteDoc(doc(db, "reviews", rev.id));
+          } catch (err) {
+            console.error("Failed to auto-remove stale review:", err);
+          }
+        }
+      });
+    }
+  }, [requests, reviews]);
+
   const handleUpdateStatus = async (id: string, newStatus: SellRequest["status"]) => {
     setActionLoading(true);
     setActionError(null);
@@ -76,6 +182,41 @@ export const SellRequestsManager: React.FC = () => {
     try {
       const docRef = doc(db, "sellRequests", id);
       await updateDoc(docRef, { status: newStatus });
+
+      const req = requests.find((r) => r.id === id);
+      if (req) {
+        if (newStatus === "approved") {
+          const cleanString = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+          const matchingCasino = casinos.find(
+            (c) => cleanString(c.casinoName) === cleanString(req.casinoName) ||
+                   cleanString(c.casinoName).includes(cleanString(req.casinoName)) ||
+                   cleanString(req.casinoName).includes(cleanString(c.casinoName))
+          );
+          const casinoId = matchingCasino ? matchingCasino.id : "unknown";
+
+          const reviewData: any = {
+            casinoId,
+            casinoName: req.casinoName,
+            userId: auth.currentUser?.uid || "admin_sync",
+            rating: 5,
+            title: `Verified Win: ৳${req.amount} | By ${req.name}`,
+            comment: req.message || "Winning screenshot proof submitted.",
+            approved: true,
+            createdAt: req.dateTime || req.createdAt || new Date().toISOString(),
+          };
+          if (req.screenshot) {
+            reviewData.jackpotScreenshot = req.screenshot;
+          }
+          if (req.balanceScreenshot) {
+            reviewData.balanceScreenshot = req.balanceScreenshot;
+          }
+          await setDoc(doc(db, "reviews", id), reviewData);
+        } else {
+          // Remove review if changed to rejected/pending
+          await deleteDoc(doc(db, "reviews", id));
+        }
+      }
+
       setActionSuccess(`Sell request successfully ${newStatus}!`);
       // Update modal view if open
       if (activeRequest && activeRequest.id === id) {
@@ -90,10 +231,6 @@ export const SellRequestsManager: React.FC = () => {
   };
 
   const handleDeleteRequest = async (id: string, casinoName: string) => {
-    if (!window.confirm(`Are you sure you want to permanently delete the sell request for "${casinoName}"?`)) {
-      return;
-    }
-
     setActionLoading(true);
     setActionError(null);
     setActionSuccess(null);
@@ -101,6 +238,10 @@ export const SellRequestsManager: React.FC = () => {
     try {
       const docRef = doc(db, "sellRequests", id);
       await deleteDoc(docRef);
+
+      // Delete public review mapping as well
+      await deleteDoc(doc(db, "reviews", id));
+
       setActionSuccess(`Successfully deleted sell request for "${casinoName}".`);
       if (activeRequest && activeRequest.id === id) {
         setActiveRequest(null);
@@ -257,7 +398,7 @@ export const SellRequestsManager: React.FC = () => {
                     </>
                   )}
                   <button
-                    onClick={() => handleDeleteRequest(req.id, req.casinoName)}
+                    onClick={() => setRequestToDelete({ id: req.id, casinoName: req.casinoName })}
                     className="p-1.5 rounded-lg border border-slate-200 text-rose-600 hover:bg-rose-50 cursor-pointer"
                     title="Delete Record"
                   >
@@ -425,7 +566,7 @@ export const SellRequestsManager: React.FC = () => {
 
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
               <button
-                onClick={() => handleDeleteRequest(activeRequest.id, activeRequest.casinoName)}
+                onClick={() => setRequestToDelete({ id: activeRequest.id, casinoName: activeRequest.casinoName })}
                 className="px-3.5 py-2 border border-red-200 text-red-600 hover:bg-red-50 rounded-xl text-xs font-bold transition cursor-pointer"
               >
                 Delete Request
@@ -455,6 +596,60 @@ export const SellRequestsManager: React.FC = () => {
                   Close
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Delete Confirmation Modal */}
+      {requestToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-xl border border-slate-100 space-y-6">
+            <div className="flex items-start gap-4">
+              <div className="h-12 w-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertCircle className="h-6 w-6" />
+              </div>
+              <div className="space-y-1.5">
+                <h3 className="text-base font-black text-slate-900 tracking-tight">
+                  Confirm Deletion?
+                </h3>
+                <p className="text-xs font-semibold text-slate-500 leading-relaxed">
+                  Are you sure you want to permanently delete the sell request for <span className="font-bold text-slate-800">"{requestToDelete.casinoName}"</span>? This action is irreversible and will permanently remove this record and its review mapping from the database.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={() => setRequestToDelete(null)}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition duration-150 disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={async () => {
+                  const target = requestToDelete;
+                  setRequestToDelete(null);
+                  await handleDeleteRequest(target.id, target.casinoName);
+                }}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 transition duration-150 disabled:opacity-50 flex items-center gap-1.5 shadow-sm shadow-rose-100 cursor-pointer"
+              >
+                {actionLoading ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Confirm Delete</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

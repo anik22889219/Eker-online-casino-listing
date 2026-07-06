@@ -29,7 +29,6 @@ import {
 } from "lucide-react";
 import { AffiliateLink, UserProfile } from "../types";
 import AnalyticsSection from "./AnalyticsSection";
-import DealsGrid from "./DealsGrid";
 
 // Import new modular foundation components
 import { AdminSidebar } from "./admin/AdminSidebar";
@@ -43,7 +42,7 @@ import { BonusManager } from "./admin/BonusManager";
 import { ModerationManager } from "./admin/ModerationManager";
 import { CasinoAnalytics } from "./admin/CasinoAnalytics";
 import { JackpotListing } from "./JackpotListing";
-import { BannersManager } from "./admin/BannersManager";
+import { ContentManager } from "./admin/ContentManager";
 
 interface AdminPanelProps {
   deals: AffiliateLink[];
@@ -73,6 +72,12 @@ export default function AdminPanel({
   });
   const [isSidebarOpenMobile, setIsSidebarOpenMobile] = useState<boolean>(false);
   const [reviewSubTab, setReviewSubTab] = useState<"moderation" | "submit">("moderation");
+
+  // Component-level check if current user is admin/moderator
+  const isUserModeratorOrAdmin = currentUser && (
+    currentUser.email === "aminulhoqueanik@gmail.com" ||
+    (userProfile && (userProfile.role === "moderator" || userProfile.role === "admin" || userProfile.role === "super_admin"))
+  );
 
   // Sync tab from URL changes
   useEffect(() => {
@@ -612,8 +617,7 @@ export default function AdminPanel({
       case 'review-submission': return 'Review Submission';
       case 'casino-analytics': return 'Casino Conversion Analytics';
       case 'sell-requests': return 'Affiliate Sell Requests';
-      case 'banners': return 'Promo Banners Manager';
-      case 'links': return 'Affiliate Offers';
+      case 'banners': return 'Content & Media Library Manager';
       case 'analytics': return 'Performance & Analytics';
       case 'profile': return 'Header & Branding Bio';
       case 'settings': return 'System Settings';
@@ -646,7 +650,7 @@ export default function AdminPanel({
         {/* Scrollable Panel Area */}
         <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 space-y-6">
           {/* Quick Statistics (Task 11 Component integration - only on old links/analytics views) */}
-          {(activeTab === "links" || activeTab === "analytics") && (
+          {activeTab === "analytics" && (
             <DashboardStats
               totalLinks={deals.length}
               activeLinks={activeLinks}
@@ -784,6 +788,19 @@ export default function AdminPanel({
                   </div>
                 </div>
               </div>
+
+              {/* Merged Casino Analytics Section */}
+              <div className="pt-4 border-t border-slate-200">
+                <div className="mb-4">
+                  <h3 className="font-display font-black text-slate-900 text-lg tracking-tight">
+                    Casino Conversion Analytics
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Analyze user impressions, dynamic click counts, and affiliate traffic click-through rates.
+                  </p>
+                </div>
+                <CasinoAnalytics />
+              </div>
             </div>
           )}
 
@@ -828,209 +845,9 @@ export default function AdminPanel({
             </div>
           )}
 
-          {activeTab === "casino-analytics" && <CasinoAnalytics />}
-
           {activeTab === "sell-requests" && <SellRequestsManager />}
 
-          {activeTab === "banners" && <BannersManager />}
-
-          {/* Active Tab Panel routing */}
-          {activeTab === "links" && (
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-              {/* Form Create/Edit Link (Left 1/3) */}
-              <div
-                id="link-form-container"
-                className="xl:col-span-1 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4"
-              >
-                <h3 className="font-display font-bold text-slate-800 text-sm flex items-center gap-1.5 border-b border-slate-100 pb-2.5">
-                  <Sliders className="h-4 w-4 text-indigo-600" />
-                  <span>{editingDeal ? `Modify Offer "${editingDeal.title}"` : "Register Affiliate Offer"}</span>
-                </h3>
-
-                {formError && (
-                  <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-xs text-red-600 leading-normal">
-                    {formError}
-                  </div>
-                )}
-
-                {formSuccess && (
-                  <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-xs text-emerald-700 flex items-center gap-1.5">
-                    <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
-                    <span>{formSuccess}</span>
-                  </div>
-                )}
-
-                <form onSubmit={handleFormSubmit} className="space-y-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      Program / Product Name *
-                    </label>
-                    <input
-                      id="form-title"
-                      type="text"
-                      placeholder="e.g. Hostinger, Stake Casino, Shopify"
-                      value={formData.title}
-                      onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                      required
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      Original Affiliate Target Link *
-                    </label>
-                    <input
-                      id="form-original-url"
-                      type="text"
-                      placeholder="e.g. shopify.pxf.io/your_referral_id"
-                      value={formData.originalUrl}
-                      onChange={(e) => setFormData({ ...formData, originalUrl: e.target.value })}
-                      required
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30 font-mono text-[11px]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      Industry Category
-                    </label>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {["Casino", "SaaS", "Shopping", "Finance", "Tech", "Custom"].map((cat) => (
-                        <button
-                          id={`form-cat-${cat.toLowerCase()}`}
-                          key={cat}
-                          type="button"
-                          onClick={() => setFormData({ ...formData, category: cat })}
-                          className={`py-1.5 rounded-lg text-[10px] font-bold border transition-all ${
-                            formData.category === cat
-                              ? "bg-indigo-50 border-indigo-500 text-indigo-800"
-                              : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
-                          }`}
-                        >
-                          {cat}
-                        </button>
-                      ))}
-                    </div>
-
-                    {formData.category === "Custom" && (
-                      <input
-                        id="form-custom-category"
-                        type="text"
-                        placeholder="Enter Custom Category..."
-                        value={formData.customCategory}
-                        onChange={(e) => setFormData({ ...formData, customCategory: e.target.value })}
-                        className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30"
-                      />
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      Promo Coupon Code (Optional)
-                    </label>
-                    <input
-                      id="form-promo-code"
-                      type="text"
-                      placeholder="e.g. EMERALD10, GETDEAL"
-                      value={formData.discountCode}
-                      onChange={(e) => setFormData({ ...formData, discountCode: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30 font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      Visitor Incentive (What they save)
-                    </label>
-                    <input
-                      id="form-incentive-text"
-                      type="text"
-                      placeholder="e.g. 10% Discount, Free Spins, $20 Credit"
-                      value={formData.rewardText}
-                      onChange={(e) => setFormData({ ...formData, rewardText: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30 font-medium"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      Referral Reward (What you receive)
-                    </label>
-                    <input
-                      id="form-bounty-text"
-                      type="text"
-                      placeholder="e.g. 15% Commish, $10 Support Bonus"
-                      value={formData.ownerRewardText}
-                      onChange={(e) => setFormData({ ...formData, ownerRewardText: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      Offer summary details
-                    </label>
-                    <textarea
-                      id="form-summary"
-                      placeholder="Summarize product terms or highlights..."
-                      value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500 bg-slate-50/30 resize-none"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-2">
-                    {editingDeal && (
-                      <button
-                        id="cancel-edit-btn"
-                        type="button"
-                        onClick={handleCancelEdit}
-                        className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-xs rounded-xl transition-all cursor-pointer"
-                      >
-                        Cancel
-                      </button>
-                    )}
-                    <button
-                      id="save-deal-btn"
-                      type="submit"
-                      disabled={formLoading}
-                      className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      {formLoading ? (
-                        <Loader2 className="h-4.5 w-4.5 animate-spin" />
-                      ) : editingDeal ? (
-                        "Apply Changes"
-                      ) : (
-                        "Publish Offer"
-                      )}
-                    </button>
-                  </div>
-                </form>
-              </div>
-
-              {/* Active List (Right 2/3) */}
-              <div className="xl:col-span-2 space-y-4">
-                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
-                  <h4 className="font-display font-bold text-slate-800 text-sm mb-1">
-                    Your Registered Referrals Selection ({deals.length})
-                  </h4>
-                  <p className="text-[11px] text-slate-400">
-                    These links are published across your public profile. Clicking modify on any card pulls its parameters into the registration form.
-                  </p>
-                </div>
-
-                <DealsGrid
-                  deals={deals}
-                  onSelectDeal={handleEditInit}
-                  isAdminView={true}
-                  onEditDeal={handleEditInit}
-                  onDeleteDeal={onDeleteDeal}
-                />
-              </div>
-            </div>
-          )}
+          {activeTab === "banners" && <ContentManager isAdminOrMod={!!isUserModeratorOrAdmin} />}
 
           {activeTab === "analytics" && <AnalyticsSection deals={deals} />}
 

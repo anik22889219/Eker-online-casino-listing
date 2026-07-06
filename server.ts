@@ -348,6 +348,104 @@ async function uploadUrlToCloudinary(imageUrl: string, folder: string): Promise<
    EXPRESS API ROUTE ENDPOINTS
    ========================================================================== */
 
+// Cloudinary 1. Fetch all uploaded Cloudinary assets
+app.get("/api/cloudinary-assets", async (req, res) => {
+  try {
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+    const apiKey = process.env.CLOUDINARY_API_KEY;
+    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+
+    if (!cloudName || !apiKey || !apiSecret) {
+      return res.status(200).json({
+        success: false,
+        error: "Cloudinary credentials (CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET) are not set in the environment variables."
+      });
+    }
+
+    const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
+    const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${cloudName}/resources/image?max_results=500`;
+
+    const response = await fetch(cloudinaryUrl, {
+      headers: {
+        Authorization: `Basic ${auth}`
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Cloudinary Admin API error:", errorText);
+      return res.status(response.status).json({
+        success: false,
+        error: `Cloudinary API error: ${errorText}`
+      });
+    }
+
+    const data = await response.json() as any;
+    return res.json({
+      success: true,
+      resources: data.resources || []
+    });
+  } catch (error: any) {
+    console.error("Failed to fetch Cloudinary assets in server:", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Failed to fetch Cloudinary resources."
+    });
+  }
+});
+
+// Cloudinary 2. Delete a Cloudinary asset by public_id
+app.post("/api/cloudinary-assets/delete", async (req, res) => {
+  try {
+    const { publicId } = req.body;
+    if (!publicId) {
+      return res.status(400).json({ success: false, error: "Missing required publicId parameter." });
+    }
+
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+    const apiKey = process.env.CLOUDINARY_API_KEY;
+    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+
+    if (!cloudName || !apiKey || !apiSecret) {
+      return res.status(400).json({
+        success: false,
+        error: "Cloudinary credentials are not configured in environment variables."
+      });
+    }
+
+    const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
+    const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${cloudName}/resources/image/upload?public_ids[]=${encodeURIComponent(publicId)}`;
+
+    const response = await fetch(cloudinaryUrl, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Basic ${auth}`
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Cloudinary Delete API error:", errorText);
+      return res.status(response.status).json({
+        success: false,
+        error: `Cloudinary delete error: ${errorText}`
+      });
+    }
+
+    const data = await response.json() as any;
+    return res.json({
+      success: true,
+      deleted: data.deleted || {}
+    });
+  } catch (error: any) {
+    console.error("Failed to delete Cloudinary asset:", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Failed to delete Cloudinary resource."
+    });
+  }
+});
+
 // 1. Crawl Brand Name and Logo from Affiliate Link
 app.post("/api/crawl-website", async (req, res) => {
   const { affiliateLink } = req.body;

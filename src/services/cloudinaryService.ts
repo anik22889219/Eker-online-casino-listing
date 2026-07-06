@@ -120,7 +120,14 @@ export async function uploadToCloudinary(
     if (response.ok) {
       const responseData = await response.json();
       const secureUrl = responseData.secure_url;
-      return getOptimizedCloudinaryUrl(secureUrl);
+      const optimizedUrl = getOptimizedCloudinaryUrl(secureUrl);
+      
+      // Register media asset in Firestore asynchronously in background
+      registerUploadedAsset(optimizedUrl, folderType, file, fileName).catch((err) =>
+        console.warn("Error registering uploaded Cloudinary asset:", err)
+      );
+
+      return optimizedUrl;
     }
     
     const errorData = await response.json();
@@ -137,6 +144,12 @@ export async function uploadToCloudinary(
     const snapshot = await uploadBytes(storageRef, file);
     const downloadUrl = await getDownloadURL(snapshot.ref);
     console.log("Uploaded successfully to Firebase Storage fallback:", downloadUrl);
+    
+    // Register media asset in Firestore asynchronously in background
+    registerUploadedAsset(downloadUrl, folderType, file, fileName).catch((err) =>
+      console.warn("Error registering uploaded Firebase Storage asset:", err)
+    );
+
     return downloadUrl;
   } catch (storageError) {
     console.warn("Firebase Storage fallback failed, attempting Base64 fallback:", storageError);
@@ -153,3 +166,33 @@ export async function uploadToCloudinary(
     throw finalErr;
   }
 }
+
+/**
+ * Register successfully uploaded image metadata in Firestore mediaAssets collection.
+ */
+async function registerUploadedAsset(url: string, folderType: string, file: Blob | File, fileName?: string) {
+  try {
+    const { db } = await import("../firebase");
+    const { auth } = await import("../firebase/auth");
+    const { collection, addDoc } = await import("firebase/firestore");
+
+    const nameToUse = fileName || (file instanceof File ? file.name : `file_${Date.now()}`);
+    const dotIndex = nameToUse.lastIndexOf('.');
+    const altText = dotIndex > 0 ? nameToUse.substring(0, dotIndex) : nameToUse;
+
+    await addDoc(collection(db, "mediaAssets"), {
+      url,
+      name: nameToUse,
+      alt: altText,
+      folderType,
+      uploadedAt: new Date().toISOString(),
+      uploadedByEmail: auth.currentUser?.email || "Anonymous",
+      uploadedByUid: auth.currentUser?.uid || "anonymous",
+      fileSize: file instanceof File ? file.size : 0,
+    });
+    console.log("Successfully registered media asset in Firestore:", url);
+  } catch (err) {
+    console.error("Failed to register media asset in Firestore:", err);
+  }
+}
+

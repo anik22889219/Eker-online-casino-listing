@@ -48,6 +48,7 @@ export const ModerationManager: React.FC = () => {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [screenshots, setScreenshots] = useState<JackpotScreenshot[]>([]);
   const [casinos, setCasinos] = useState<Casino[]>([]);
+  const [sellRequests, setSellRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [screenshotsViewMode, setScreenshotsViewMode] = useState<"table" | "grid">("grid");
 
@@ -66,6 +67,12 @@ export const ModerationManager: React.FC = () => {
 
   // Modal display states
   const [selectedScreenshot, setSelectedScreenshot] = useState<UnifiedWinSlip | null>(null);
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{
+    type: "review" | "screenshot";
+    id: string;
+    title: string;
+    originalItem: any;
+  } | null>(null);
 
   useEffect(() => {
     // 1. Load casinos
@@ -99,15 +106,75 @@ export const ModerationManager: React.FC = () => {
       setScreenshots(list);
     });
 
+    // 4. Load sell requests in real-time
+    const unsubSellRequests = onSnapshot(collection(db, "sellRequests"), (snap) => {
+      const list: any[] = [];
+      snap.forEach((d) => {
+        list.push({ id: d.id, ...d.data() });
+      });
+      setSellRequests(list);
+    });
+
     return () => {
       unsubCasinos();
       unsubReviews();
       unsubScreenshots();
+      unsubSellRequests();
     };
   }, []);
 
-  const getCasinoName = (id: string) => {
-    return casinos.find((c) => c.id === id)?.casinoName || "Unknown Casino";
+  const getCasinoName = (idOrReview: string | Review) => {
+    const id = typeof idOrReview === "string" ? idOrReview : idOrReview.casinoId;
+    const casino = casinos.find((c) => c.id === id);
+    if (casino) return casino.casinoName;
+    
+    if (typeof idOrReview !== "string") {
+      const rev = idOrReview as any;
+      
+      // 1. Check if we have a matching sell request by document id
+      const sellReq = sellRequests.find((s) => s.id === rev.id);
+      if (sellReq && sellReq.casinoName) {
+        const cleanString = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const matched = casinos.find(
+          (c) => cleanString(c.casinoName) === cleanString(sellReq.casinoName) ||
+                 cleanString(c.casinoName).includes(cleanString(sellReq.casinoName)) ||
+                 cleanString(sellReq.casinoName).includes(cleanString(c.casinoName))
+        );
+        if (matched) return matched.casinoName;
+        return sellReq.casinoName;
+      }
+
+      // 2. Fallback to review's embedded casinoName
+      if (rev.casinoName) {
+        const cleanString = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const matched = casinos.find(
+          (c) => cleanString(c.casinoName) === cleanString(rev.casinoName) ||
+                 cleanString(c.casinoName).includes(cleanString(rev.casinoName)) ||
+                 cleanString(rev.casinoName).includes(cleanString(c.casinoName))
+        );
+        if (matched) return matched.casinoName;
+        return rev.casinoName;
+      }
+
+      // 3. Extrapolate from the review comment
+      if (rev.comment && rev.comment.toLowerCase().includes("jackpot submission for")) {
+        const parts = rev.comment.split(/jackpot submission for/i);
+        if (parts.length > 1) {
+          const possibleName = parts[1].trim();
+          if (possibleName) {
+            const cleanString = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+            const matched = casinos.find(
+              (c) => cleanString(c.casinoName) === cleanString(possibleName) ||
+                     cleanString(c.casinoName).includes(cleanString(possibleName)) ||
+                     cleanString(possibleName).includes(cleanString(c.casinoName))
+            );
+            if (matched) return matched.casinoName;
+            return possibleName;
+          }
+        }
+      }
+    }
+    return "Unknown Casino";
   };
 
   const createNotification = async (userId: string, title: string, message: string, type: string) => {
@@ -153,12 +220,6 @@ export const ModerationManager: React.FC = () => {
   };
 
   const handleDeleteUnified = async (item: UnifiedWinSlip) => {
-    const confirmMessage = item.source === "reviews"
-      ? "Permanently delete this user review & jackpot proof from the database?"
-      : "Permanently delete this player jackpot win record?";
-    if (!window.confirm(confirmMessage)) {
-      return;
-    }
     setActionLoading(true);
     try {
       await deleteDoc(doc(db, item.source, item.originalId));
@@ -197,9 +258,6 @@ export const ModerationManager: React.FC = () => {
   };
 
   const handleDeleteReview = async (id: string) => {
-    if (!window.confirm("Permanently delete this user review from database?")) {
-      return;
-    }
     setActionLoading(true);
     try {
       await deleteDoc(doc(db, "reviews", id));
@@ -367,7 +425,7 @@ export const ModerationManager: React.FC = () => {
     const matchedSearch =
       r.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       r.comment.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      getCasinoName(r.casinoId).toLowerCase().includes(searchQuery.toLowerCase());
+      getCasinoName(r).toLowerCase().includes(searchQuery.toLowerCase());
     const matchedStatus =
       statusFilter === "all" ||
       (statusFilter === "approved" && r.approved) ||
@@ -603,7 +661,7 @@ export const ModerationManager: React.FC = () => {
                       <td className="p-4">
                         <div className="flex items-center gap-2">
                           <Building2 className="h-4 w-4 text-slate-400" />
-                          <span className="font-bold text-slate-900">{getCasinoName(rev.casinoId)}</span>
+                          <span className="font-bold text-slate-900">{getCasinoName(rev)}</span>
                         </div>
                       </td>
                       <td className="p-4">
@@ -679,7 +737,12 @@ export const ModerationManager: React.FC = () => {
                             </button>
                           )}
                           <button
-                            onClick={() => handleDeleteReview(rev.id)}
+                            onClick={() => setDeleteConfirmTarget({
+                              type: "review",
+                              id: rev.id,
+                              title: rev.title || `Review by user`,
+                              originalItem: rev
+                            })}
                             className="p-1.5 rounded-lg border border-slate-200 text-rose-600 hover:bg-rose-50 cursor-pointer"
                             title="Delete review"
                           >
@@ -824,7 +887,12 @@ export const ModerationManager: React.FC = () => {
                     )
                     }
                     <button
-                      onClick={() => handleDeleteUnified(scr)}
+                      onClick={() => setDeleteConfirmTarget({
+                        type: "screenshot",
+                        id: scr.id,
+                        title: scr.amount ? `$${scr.amount.toLocaleString()} jackpot proof` : (scr.title || "Jackpot win proof"),
+                        originalItem: scr
+                      })}
                       className="p-1.5 border border-slate-200 text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                       title="Delete proof"
                     >
@@ -939,7 +1007,12 @@ export const ModerationManager: React.FC = () => {
                             </button>
                           )}
                           <button
-                            onClick={() => handleDeleteUnified(scr)}
+                            onClick={() => setDeleteConfirmTarget({
+                              type: "screenshot",
+                              id: scr.id,
+                              title: scr.amount ? `$${scr.amount.toLocaleString()} jackpot proof` : (scr.title || "Jackpot win proof"),
+                              originalItem: scr
+                            })}
                             className="p-1.5 rounded-lg border border-slate-200 text-rose-600 hover:bg-rose-50 cursor-pointer"
                             title="Delete screenshot"
                           >
@@ -1047,6 +1120,64 @@ export const ModerationManager: React.FC = () => {
                 className="px-4 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-bold transition text-slate-600"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Delete Confirmation Modal */}
+      {deleteConfirmTarget && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-xl border border-slate-100 space-y-6">
+            <div className="flex items-start gap-4">
+              <div className="h-12 w-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertCircle className="h-6 w-6" />
+              </div>
+              <div className="space-y-1.5">
+                <h3 className="text-base font-black text-slate-900 tracking-tight">
+                  Confirm Deletion?
+                </h3>
+                <p className="text-xs font-semibold text-slate-500 leading-relaxed">
+                  Are you sure you want to permanently delete the {deleteConfirmTarget.title}? This action is irreversible and will permanently remove this record from the database.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={() => setDeleteConfirmTarget(null)}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition duration-150 disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={async () => {
+                  const target = deleteConfirmTarget;
+                  setDeleteConfirmTarget(null);
+                  if (target.type === "review") {
+                    await handleDeleteReview(target.id);
+                  } else {
+                    await handleDeleteUnified(target.originalItem);
+                  }
+                }}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 transition duration-150 disabled:opacity-50 flex items-center gap-1.5 shadow-sm shadow-rose-100 cursor-pointer"
+              >
+                {actionLoading ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Confirm Delete</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

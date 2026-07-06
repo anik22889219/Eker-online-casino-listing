@@ -18,7 +18,6 @@ export const CasinoCard: React.FC<CasinoCardProps> = ({ casino }) => {
     bannerImage,
     welcomeBonus,
     category,
-    country,
     featured,
     averageRating = 4.8,
     affiliateLink,
@@ -102,22 +101,6 @@ export const CasinoCard: React.FC<CasinoCardProps> = ({ casino }) => {
             <h3 className="font-display font-extrabold text-slate-900 text-xs sm:text-base leading-snug group-hover:text-indigo-600 transition-colors line-clamp-1">
               {casinoName}
             </h3>
-            {country && (
-              <span className="inline-flex items-center gap-1 text-[8px] sm:text-[10px] font-bold text-slate-400 font-mono shrink-0">
-                <Globe className="h-3 w-3 text-slate-400" />
-                {country}
-              </span>
-            )}
-          </div>
-
-          {/* High converting welcome bonus display */}
-          <div className="bg-slate-50 border border-slate-150/70 rounded-2xl p-2.5 sm:p-3 text-center transition-colors group-hover:bg-indigo-50/10 group-hover:border-indigo-100/50">
-            <span className="text-[8px] sm:text-[9px] text-slate-400 font-black uppercase tracking-widest block leading-none mb-1.5">
-              Welcome Reward
-            </span>
-            <span className="text-[10px] sm:text-xs font-black text-indigo-950 tracking-tight leading-tight block line-clamp-2 min-h-[30px] sm:min-h-[36px] flex items-center justify-center">
-              {welcomeBonus || "Exclusive Welcome Promo"}
-            </span>
           </div>
         </div>
 

@@ -23,10 +23,8 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
     { id: 'casinos', label: 'Casino Listings', icon: Building2 },
     { id: 'bonuses', label: 'Campaign Bonuses', icon: Percent },
     { id: 'review-submission', label: 'Review Submission', icon: ShieldCheck },
-    { id: 'casino-analytics', label: 'Casino Analytics', icon: LineChart },
     { id: 'sell-requests', label: 'Sell Requests', icon: TrendingUp },
-    { id: 'links', label: 'Affiliate Links', icon: Link2 },
-    { id: 'banners', label: 'Promo Banners', icon: ImageIcon },
+    { id: 'banners', label: 'Content Manager', icon: ImageIcon },
     { id: 'settings', label: 'Settings', icon: Settings },
     { id: 'users', label: 'User Manager', icon: Users },
   ];

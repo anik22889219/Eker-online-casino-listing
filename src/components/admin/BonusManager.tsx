@@ -51,6 +51,10 @@ export const BonusManager: React.FC = () => {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Custom Delete confirmation modal states
+  const [bonusToDelete, setBonusToDelete] = useState<Bonus | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   useEffect(() => {
     // Sync active published casinos
     const unsubCasinos = onSnapshot(
@@ -165,21 +169,24 @@ export const BonusManager: React.FC = () => {
     setSelectedCasinoIds([bonus.casinoId]);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this promotion?")) {
-      return;
-    }
-    setActionLoading(true);
+  const handleDelete = (bonus: Bonus) => {
+    setBonusToDelete(bonus);
+  };
+
+  const executeDeleteBonus = async () => {
+    if (!bonusToDelete) return;
+    setIsDeleting(true);
     setActionError(null);
     setActionSuccess(null);
     try {
-      await deleteDoc(doc(db, "bonuses", id));
+      await deleteDoc(doc(db, "bonuses", bonusToDelete.id));
       setActionSuccess("Bonus promotion deleted successfully.");
+      setBonusToDelete(null);
     } catch (err: any) {
       console.error(err);
       setActionError(err.message || "Failed to delete bonus.");
     } finally {
-      setActionLoading(false);
+      setIsDeleting(false);
     }
   };
 
@@ -499,7 +506,7 @@ export const BonusManager: React.FC = () => {
                         <Edit className="h-3.5 w-3.5" />
                       </button>
                       <button
-                        onClick={() => handleDelete(b.id)}
+                        onClick={() => handleDelete(b)}
                         className="p-1.5 rounded-lg border border-slate-250 text-rose-600 hover:bg-rose-50 cursor-pointer"
                         title="Delete Bonus"
                       >
@@ -513,6 +520,56 @@ export const BonusManager: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Custom Delete Confirmation Modal */}
+      {bonusToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-xl border border-slate-100 transform transition-all animate-in zoom-in-95 duration-200 space-y-6">
+            <div className="flex items-start gap-4">
+              <div className="h-12 w-12 rounded-2xl bg-red-50 border border-red-100 text-red-650 flex items-center justify-center shrink-0">
+                <AlertCircle className="h-6 w-6 text-red-600" />
+              </div>
+              <div className="space-y-1.5 text-left">
+                <h3 className="text-base font-black text-slate-900 tracking-tight">
+                  Delete Promo Campaign?
+                </h3>
+                <p className="text-xs font-semibold text-slate-500 leading-relaxed">
+                  Are you sure you want to permanently delete the promotion <span className="font-bold text-slate-800">"{bonusToDelete.title}"</span>? This action is irreversible and will remove the offer from linked affiliate listings instantly.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setBonusToDelete(null)}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition duration-150 disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={executeDeleteBonus}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition duration-150 disabled:opacity-50 flex items-center gap-1.5 shadow-sm shadow-red-100 cursor-pointer"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Confirm Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

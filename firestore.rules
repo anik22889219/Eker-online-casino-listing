@@ -137,13 +137,13 @@ service cloud.firestore {
     // 3. CASINOS COLLECTION RULES
     // =========================================================================
     match /casinos/{casinoId} {
-      allow get: if isAdmin();
+      allow get: if isModerator();
       allow get: if resource.data.status == 'published';
-      allow list: if isAdmin();
+      allow list: if isModerator();
       allow list: if resource.data.status == 'published';
 
-      allow create: if isAdmin() && isValidCasino(request.resource.data, true);
-      allow update: if isAdmin() && isValidCasino(request.resource.data, false);
+      allow create: if isModerator() && isValidCasino(request.resource.data, true);
+      allow update: if isModerator() && isValidCasino(request.resource.data, false);
       allow delete: if isSuperAdmin();
     }
 
@@ -180,7 +180,7 @@ service cloud.firestore {
       allow list: if isOwner(resource.data.userId) || isModerator() || resource.data.approved == true;
 
       allow create: if isSignedIn() && 
-                    request.resource.data.userId == request.auth.uid && 
+                    (request.resource.data.userId == request.auth.uid || isModerator()) && 
                     (request.resource.data.approved == false || isModerator()) && // Must start unapproved unless submitted by a moderator/admin
                     isValidReview(request.resource.data, true);
 
@@ -197,9 +197,10 @@ service cloud.firestore {
     function isValidReview(data, isCreate) {
       return (!isCreate || (
         data.keys().hasAll(['casinoId', 'userId', 'rating', 'title', 'comment', 'approved', 'createdAt']) &&
-        data.keys().size() >= 7 && data.keys().size() <= 9
+        data.keys().size() >= 7 && data.keys().size() <= 11
       )) &&
       (!('casinoId' in data) || (data.casinoId is string && data.casinoId.size() <= 128)) &&
+      (!('casinoName' in data) || (data.casinoName is string && data.casinoName.size() <= 256)) &&
       (!('userId' in data) || (data.userId is string && data.userId.size() <= 128)) &&
       (!('rating' in data) || (data.rating is number && data.rating >= 1 && data.rating <= 5)) &&
       (!('title' in data) || (data.title is string && data.title.size() <= 128)) &&
@@ -241,8 +242,8 @@ service cloud.firestore {
     match /bonuses/{bonusId} {
       allow get, list: if true;
 
-      allow create, update: if isAdmin() && isValidBonus(request.resource.data);
-      allow delete: if isAdmin();
+      allow create, update: if isModerator() && isValidBonus(request.resource.data);
+      allow delete: if isModerator();
     }
 
     function isValidBonus(data) {
@@ -261,8 +262,8 @@ service cloud.firestore {
     match /promoOffers/{offerId} {
       allow get, list: if true;
 
-      allow create, update: if isAdmin() && isValidPromoOffer(request.resource.data);
-      allow delete: if isAdmin();
+      allow create, update: if isModerator() && isValidPromoOffer(request.resource.data);
+      allow delete: if isModerator();
     }
 
     function isValidPromoOffer(data) {
@@ -406,6 +407,23 @@ service cloud.firestore {
              data.casinoId is string && data.casinoId.size() <= 128 &&
              data.timestamp is string && data.timestamp.size() <= 64 &&
              data.anonymousVisitorId is string && data.anonymousVisitorId.size() <= 128;
+    }
+
+    // =========================================================================
+    // 15. MEDIA ASSETS COLLECTION RULES
+    // =========================================================================
+    match /mediaAssets/{assetId} {
+      allow get, list: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if isModerator();
+    }
+
+    // =========================================================================
+    // 16. PROMO BANNERS COLLECTION RULES
+    // =========================================================================
+    match /banners/{bannerId} {
+      allow get, list: if true;
+      allow create, update, delete: if isModerator();
     }
   }
 }

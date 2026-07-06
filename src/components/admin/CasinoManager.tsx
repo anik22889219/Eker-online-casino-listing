@@ -211,6 +211,19 @@ export const CasinoManager: React.FC = () => {
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [createdCasinoInfo, setCreatedCasinoInfo] = useState<{ name: string; id: string; category: string; welcomeBonus: string; bannerImage: string } | null>(null);
 
+  // Dedicated Smart Sync Popup States
+  const [isSyncingPopup, setIsSyncingPopup] = useState<boolean>(false);
+  const [syncingCasino, setSyncingCasino] = useState<Casino | null>(null);
+  const [syncStep, setSyncStep] = useState<"idle" | "syncing" | "success" | "error">("idle");
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncHealedFields, setSyncHealedFields] = useState<string[]>([]);
+  const [syncTasks, setSyncTasks] = useState<Array<{
+    id: number;
+    label: string;
+    description: string;
+    status: "pending" | "processing" | "completed" | "failed";
+  }>>([]);
+
   // Real-time Subscriptions
   useEffect(() => {
     // 1. Casinos Subscription (exclude soft deleted)
@@ -619,43 +632,88 @@ export const CasinoManager: React.FC = () => {
     );
   };
 
-  // Trigger Smart Self-Healing & Asset Refresh
-  const handleSmartRefresh = async (casino: Casino) => {
-    requestConfirmation(
-      "Smart Self-Healing Sync",
-      `Would you like to perform a Smart Self-Healing Sync for "${casino.casinoName}"?\n\nThis will automatically scan, fetch, and restore any missing logos, taglines/welcomeSlogans, descriptions, or banners from the source site while keeping your manual modifications intact.`,
-      async () => {
-        setFormLoading(true);
-        setFormError(null);
-        setFormSuccess(`Scanning & auto-healing assets for ${casino.casinoName}...`);
+  // Trigger Smart Self-Healing & Asset Refresh (Opens our custom detailed popup!)
+  const handleSmartRefresh = (casino: Casino) => {
+    setSyncingCasino(casino);
+    setSyncStep("idle");
+    setSyncError(null);
+    setSyncHealedFields([]);
+    setSyncTasks([
+      { id: 1, label: "Website Metadata Extraction", description: "Fetch target website headers, canonical link, title and basic descriptors", status: "pending" },
+      { id: 2, label: "Brand Logo & Favicon Discovery", description: "Scrape meta elements and search highly-reliable favicon APIs for official logos", status: "pending" },
+      { id: 3, label: "Media Proxying & Optimization", description: "Upload brand logo and cover assets securely to Cloudinary with WebP conversion", status: "pending" },
+      { id: 4, label: "AI Tagline Copywriting", description: "Use Gemini to analyze brand assets and copywrite/heal custom welcome bonus tagline", status: "pending" },
+      { id: 5, label: "AI Landing Content Compilation", description: "Compile custom Markdown review sections, feature highlights, FAQs and pros/cons via Gemini", status: "pending" },
+      { id: 6, label: "SEO Meta Fields Alignment", description: "Formulate search-engine-ready meta descriptions, title schemas and tags", status: "pending" },
+      { id: 7, label: "Writing Self-Healed States to DB", description: "Safely register all recovered elements to the Firebase Firestore database", status: "pending" }
+    ]);
+    setIsSyncingPopup(true);
+  };
 
-        try {
-          const result = await refreshCasinoAssets(casino.id);
-          if (result.success) {
-            const heals = result.healedFields.join("\n• ");
-            setFormSuccess(`Successfully synced & healed "${casino.casinoName}"!\n\nApplied actions:\n• ${heals}`);
-            
-            // If editing this casino, update state to reflect the healed fields in real-time
-            if (editingCasino?.id === casino.id) {
-              const updated = {
-                ...editingCasino,
-                ...result.updatedCasino
-              };
-              setEditingCasino(updated);
-              setEditFields(updated);
-            }
-          } else {
-            throw new Error("Self-healing service returned an unsuccessful state.");
-          }
-        } catch (err: any) {
-          console.error(err);
-          setFormError(err.message || "Self-healing refresh failed.");
-        } finally {
-          setFormLoading(false);
+  // Run the step-by-step detailed smart self-healing sync process
+  const startDetailedSync = async () => {
+    if (!syncingCasino) return;
+    setSyncStep("syncing");
+    setSyncError(null);
+
+    const updateTaskStatus = (taskId: number, status: "pending" | "processing" | "completed" | "failed") => {
+      setSyncTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, status } : t))
+      );
+    };
+
+    let currentActiveStep = 1;
+    updateTaskStatus(1, "processing");
+
+    // progress timer to simulate active task transitions while backend API completes
+    const progressTimer = setInterval(() => {
+      if (currentActiveStep < 7) {
+        updateTaskStatus(currentActiveStep, "completed");
+        currentActiveStep += 1;
+        updateTaskStatus(currentActiveStep, "processing");
+      }
+    }, 1800);
+
+    try {
+      const result = await refreshCasinoAssets(syncingCasino.id);
+      clearInterval(progressTimer);
+
+      if (result.success) {
+        // complete all tasks
+        setSyncTasks((prev) =>
+          prev.map((t) => ({ ...t, status: "completed" }))
+        );
+        setSyncHealedFields(result.healedFields || []);
+        setSyncStep("success");
+
+        // If editing this casino, update state to reflect the healed fields in real-time
+        if (editingCasino?.id === syncingCasino.id) {
+          const updated = {
+            ...editingCasino,
+            ...result.updatedCasino
+          };
+          setEditingCasino(updated);
+          setEditFields(updated);
         }
-      },
-      { type: "warning", confirmText: "Sync Now" }
-    );
+      } else {
+        throw new Error("Self-healing service returned an unsuccessful state.");
+      }
+    } catch (err: any) {
+      clearInterval(progressTimer);
+      console.error(err);
+      
+      // Mark current active task as failed
+      setSyncTasks((prev) =>
+        prev.map((t) => {
+          if (t.id === currentActiveStep || t.status === "processing") {
+            return { ...t, status: "failed" };
+          }
+          return t;
+        })
+      );
+      setSyncError(err.message || "Self-healing refresh failed.");
+      setSyncStep("error");
+    }
   };
 
   // Edit fields change handler
@@ -2275,6 +2333,265 @@ export const CasinoManager: React.FC = () => {
                 </div>
               </div>
             )}
+
+          </div>
+        </div>
+      )}
+
+      {/* 5. Smart Self-Healing Sync Detailed Wizard Modal */}
+      {isSyncingPopup && syncingCasino && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs transition-opacity animate-fade-in">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden p-6 space-y-6 relative max-h-[90vh] flex flex-col">
+            
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-slate-100 pb-4 shrink-0">
+              <div className="space-y-1">
+                <h3 className="font-display font-extrabold text-lg text-slate-900 tracking-tight flex items-center gap-2">
+                  <RefreshCw className={`w-5 h-5 text-indigo-600 ${syncStep === "syncing" ? "animate-spin" : ""}`} />
+                  Smart Self-Healing Sync
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  Autonomous asset diagnostics and repair engine
+                </p>
+              </div>
+              {syncStep !== "syncing" && (
+                <button
+                  onClick={() => {
+                    setIsSyncingPopup(false);
+                    setSyncingCasino(null);
+                  }}
+                  className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500 cursor-pointer transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="overflow-y-auto no-scrollbar flex-1 pr-1">
+              {/* IDLE / CONFIRMATION STATE */}
+              {syncStep === "idle" && (
+                <div className="space-y-5 py-2">
+                  <div className="p-4 bg-amber-50 border border-amber-150 rounded-2xl flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <span className="text-xs font-extrabold text-amber-900 block">Target Brand Details:</span>
+                      <p className="text-xs text-amber-800 font-medium leading-relaxed">
+                        Ready to analyze and auto-heal missing assets for <strong className="font-black text-slate-900">{syncingCasino.casinoName}</strong>. 
+                        This scanner automatically pulls official brand logos, welcome slogans, promotional taglines, descriptions, landing reviews, and SEO schemas.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Diagnostics Checklist</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-650 font-bold">
+                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+                        <span>Crawl live landing page metadata</span>
+                      </div>
+                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+                        <span>Fetch high-res brand logos</span>
+                      </div>
+                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+                        <span>Upload logo securely to Cloudinary</span>
+                      </div>
+                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+                        <span>Gemini tagline copywriting</span>
+                      </div>
+                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+                        <span>Full Markdown review draft</span>
+                      </div>
+                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+                        <span>SEO tag and keyword optimization</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-150 p-3 rounded-2xl flex items-center gap-3">
+                    <Globe className="w-5 h-5 text-slate-400 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Source Target URL</span>
+                      <span className="text-xs font-semibold text-indigo-650 block truncate font-mono">{syncingCasino.affiliateLink}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SYNCING / TASK LIST STATE */}
+              {syncStep === "syncing" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-2">
+                    <span className="text-xs font-black text-indigo-750 flex items-center gap-1.5 bg-indigo-50 border border-indigo-150 px-3 py-1 rounded-full animate-pulse">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Syncing in Progress...
+                    </span>
+                    <span className="text-[10px] font-extrabold text-slate-400 tracking-wider">
+                      {syncTasks.filter(t => t.status === "completed").length} of {syncTasks.length} Done
+                    </span>
+                  </div>
+
+                  <div className="divide-y divide-slate-100 border border-slate-150 rounded-2xl overflow-hidden bg-slate-50/30">
+                    {syncTasks.map((task) => (
+                      <div key={task.id} className="p-3 flex items-start gap-3 hover:bg-slate-50/50 transition">
+                        <div className="mt-0.5 shrink-0">
+                          {task.status === "completed" && (
+                            <CheckCircle className="w-4 h-4 text-emerald-600 bg-emerald-50 rounded-full" />
+                          )}
+                          {task.status === "processing" && (
+                            <Loader2 className="w-4 h-4 text-indigo-600 animate-spin" />
+                          )}
+                          {task.status === "pending" && (
+                            <div className="w-4 h-4 rounded-full border border-slate-200 bg-white" />
+                          )}
+                          {task.status === "failed" && (
+                            <AlertCircle className="w-4 h-4 text-red-600 bg-red-50 rounded-full" />
+                          )}
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className={`text-xs font-black leading-tight ${
+                            task.status === "completed" 
+                              ? "text-emerald-900" 
+                              : task.status === "processing"
+                              ? "text-indigo-900"
+                              : task.status === "failed"
+                              ? "text-red-900"
+                              : "text-slate-700"
+                          }`}>
+                            {task.label}
+                          </p>
+                          <p className="text-[10px] text-slate-450 leading-relaxed font-medium">
+                            {task.description}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <p className="text-[10px] text-slate-400 leading-normal text-center pt-2">
+                    ⚠️ Please stand by. Do not refresh or navigate. This utilizes live web scraping and Gemini AI algorithms to repair your target portal directories.
+                  </p>
+                </div>
+              )}
+
+              {/* SUCCESS STATE */}
+              {syncStep === "success" && (
+                <div className="space-y-5 py-2 text-center">
+                  <div className="mx-auto w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center border border-emerald-100 animate-bounce">
+                    <CheckCircle className="w-9 h-9 text-emerald-600" />
+                  </div>
+                  
+                  <div className="space-y-1.5">
+                    <h4 className="font-display font-black text-lg text-emerald-950 tracking-tight">
+                      Database Sync Successful!
+                    </h4>
+                    <p className="text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
+                      All diagnostic assets and marketing elements have been repaired and registered to Firestore for <strong className="font-bold text-slate-800">{syncingCasino.casinoName}</strong>.
+                    </p>
+                  </div>
+
+                  {/* Healed Fields Output */}
+                  <div className="bg-slate-50/75 border border-slate-200/80 rounded-2xl p-4 text-left space-y-3 max-w-md mx-auto">
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Sync & Healing Actions Applied:</span>
+                    {syncHealedFields.length > 0 ? (
+                      <ul className="space-y-1.5 text-xs font-semibold text-slate-700">
+                        {syncHealedFields.map((field, index) => (
+                          <li key={index} className="flex items-start gap-2">
+                            <span className="text-emerald-500 font-extrabold mt-0.5">✓</span>
+                            <span>{field}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-slate-500 font-medium">
+                        ✓ Listing is already complete and highly detailed. No missing fields required repair.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ERROR STATE */}
+              {syncStep === "error" && (
+                <div className="space-y-5 py-2 text-center">
+                  <div className="mx-auto w-16 h-16 bg-red-50 rounded-full flex items-center justify-center border border-red-100">
+                    <AlertTriangle className="w-9 h-9 text-red-600 animate-bounce" />
+                  </div>
+                  
+                  <div className="space-y-1.5">
+                    <h4 className="font-display font-black text-lg text-red-950 tracking-tight">
+                      Asset Sync Failed
+                    </h4>
+                    <p className="text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
+                      {syncError || "An unexpected network or cloud service connection failure occurred during diagnostic sync."}
+                    </p>
+                  </div>
+
+                  <div className="bg-red-50/50 border border-red-100 p-3 rounded-xl text-[10px] text-red-700 leading-normal text-left max-w-md mx-auto font-medium">
+                    💡 If this happens repeatedly on live hosting, the destination website's security layer (e.g., Cloudflare) may be actively blocking diagnostic bot scraper headers. You can always edit parameters manually.
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer / Action row */}
+            <div className="border-t border-slate-100 pt-4 flex items-center justify-end gap-3 shrink-0">
+              {syncStep === "idle" && (
+                <>
+                  <button
+                    onClick={() => {
+                      setIsSyncingPopup(false);
+                      setSyncingCasino(null);
+                    }}
+                    className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-xs rounded-xl transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={startDetailedSync}
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Sync Now</span>
+                  </button>
+                </>
+              )}
+
+              {syncStep === "syncing" && (
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider animate-pulse flex items-center gap-1.5 py-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                  Processing diagnostics...
+                </span>
+              )}
+
+              {syncStep === "success" && (
+                <button
+                  onClick={() => {
+                    setIsSyncingPopup(false);
+                    setSyncingCasino(null);
+                  }}
+                  className="w-full sm:w-auto px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-xs transition cursor-pointer"
+                >
+                  Completed
+                </button>
+              )}
+
+              {syncStep === "error" && (
+                <button
+                  onClick={() => {
+                    setIsSyncingPopup(false);
+                    setSyncingCasino(null);
+                  }}
+                  className="w-full sm:w-auto px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
+                >
+                  Close Wizard
+                </button>
+              )}
+            </div>
 
           </div>
         </div>

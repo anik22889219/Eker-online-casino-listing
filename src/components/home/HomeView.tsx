@@ -3,8 +3,7 @@ import { db } from "../../firebase";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { Casino } from "../../types/firestore";
 import HomeHero from "./HomeHero";
-import CasinoCard from "./CasinoCard";
-import WinnerGallery from "./WinnerGallery";
+import CasinoCarousel from "./CasinoCarousel";
 import SellScreenshotCTA from "./SellScreenshotCTA";
 import HomeFaq from "./HomeFaq";
 import HomeFooter from "./HomeFooter";
@@ -99,11 +98,7 @@ export const HomeView: React.FC = () => {
                 <Sparkles className="h-5 w-5 text-amber-500" />
                 <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">Featured Operators</h2>
               </div>
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
-                {featuredCasinos.map((c) => (
-                  <CasinoCard key={c.id} casino={c} />
-                ))}
-              </div>
+              <CasinoCarousel casinos={featuredCasinos} />
             </section>
           )}
 
@@ -118,11 +113,7 @@ export const HomeView: React.FC = () => {
                 <p className="text-xs text-slate-400 font-bold uppercase">No matching listings found</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
-                {latestCasinos.map((c) => (
-                  <CasinoCard key={c.id} casino={c} />
-                ))}
-              </div>
+              <CasinoCarousel casinos={latestCasinos} />
             )}
           </section>
 
@@ -133,16 +124,9 @@ export const HomeView: React.FC = () => {
                 <Flame className="h-5 w-5 text-rose-500" />
                 <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">Top Rated Rewards</h2>
               </div>
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
-                {popularBonuses.map((c) => (
-                  <CasinoCard key={c.id} casino={c} />
-                ))}
-              </div>
+              <CasinoCarousel casinos={popularBonuses} />
             </section>
           )}
-
-          {/* 7. Winner Screenshot Gallery */}
-          <WinnerGallery casinos={casinos} />
 
           {/* 8. Sell Your Winning Screenshot CTA */}
           <SellScreenshotCTA />

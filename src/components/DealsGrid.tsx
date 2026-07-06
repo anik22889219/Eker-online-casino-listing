@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Search, Tag, Eye, SlidersHorizontal, Award, Sparkles, ExternalLink, ArrowRight, ShieldCheck, Flame } from "lucide-react";
+import { Search, Tag, Eye, SlidersHorizontal, Award, Sparkles, ExternalLink, ArrowRight, ShieldCheck, Flame, Trash2, Loader2, AlertCircle } from "lucide-react";
 import { AffiliateLink } from "../types";
 import { motion } from "motion/react";
 
@@ -21,6 +21,8 @@ export default function DealsGrid({
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [sortBy, setSortBy] = useState<"newest" | "clicks" | "alphabetical">("newest");
+  const [dealToDelete, setDealToDelete] = useState<AffiliateLink | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Dynamically extract categories
   const categories = useMemo(() => {
@@ -199,9 +201,7 @@ export default function DealsGrid({
                           id={`delete-deal-btn-${deal.id}`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (window.confirm("Archiving will clean up public view. Ensure archiving?") && onDeleteDeal) {
-                              onDeleteDeal(deal.id);
-                            }
+                            setDealToDelete(deal);
                           }}
                           className="px-2.5 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50 rounded-lg border border-red-100 cursor-pointer"
                         >
@@ -223,6 +223,68 @@ export default function DealsGrid({
               </motion.div>
             );
           })}
+        </div>
+      )}
+
+      {/* Custom Archive Confirmation Modal */}
+      {dealToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-xl border border-slate-100 transform transition-all animate-in zoom-in-95 duration-200 space-y-6 text-left">
+            <div className="flex items-start gap-4">
+              <div className="h-12 w-12 rounded-2xl bg-red-50 border border-red-100 text-red-600 flex items-center justify-center shrink-0">
+                <AlertCircle className="h-6 w-6" />
+              </div>
+              <div className="space-y-1.5">
+                <h3 className="text-base font-black text-slate-900 tracking-tight">
+                  Archive Referral Link?
+                </h3>
+                <p className="text-xs font-semibold text-slate-500 leading-relaxed">
+                  Are you sure you want to archive the referral link <span className="font-bold text-slate-800">"{dealToDelete.title}"</span>? This will hide it from the public directory.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDealToDelete(null)}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition duration-150 disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={async () => {
+                  if (onDeleteDeal) {
+                    setIsDeleting(true);
+                    try {
+                      await onDeleteDeal(dealToDelete.id);
+                      setDealToDelete(null);
+                    } catch (err) {
+                      console.error("Failed to archive deal:", err);
+                    } finally {
+                      setIsDeleting(false);
+                    }
+                  }
+                }}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition duration-150 disabled:opacity-50 flex items-center gap-1.5 shadow-sm shadow-red-100 cursor-pointer"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Archiving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Confirm Archive</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
