@@ -43,6 +43,21 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
+// Utility helper to resolve custom premium local logos
+const getNormalizedLogo = (casino: any) => {
+  if (!casino) return "";
+  const logo = casino.casinoLogo;
+  const name = (casino.casinoName || "").toLowerCase();
+  const link = (casino.affiliateLink || "").toLowerCase();
+  if (name.includes("tk10") || link.includes("tk15") || link.includes("tk10")) {
+    return "/tk10_logo.jpg";
+  }
+  if (name.includes("qq777") || link.includes("qq777")) {
+    return "/qq777_logo.jpg";
+  }
+  return logo;
+};
+
 // Types matching firestore schemas
 interface Casino {
   id: string;
@@ -217,6 +232,15 @@ export const CasinoManager: React.FC = () => {
   const [syncStep, setSyncStep] = useState<"idle" | "syncing" | "success" | "error">("idle");
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncHealedFields, setSyncHealedFields] = useState<string[]>([]);
+  const [syncOptions, setSyncOptions] = useState({
+    casinoName: true,
+    casinoLogo: true,
+    bannerImage: true,
+    welcomeBonus: true,
+    landingContent: true,
+    seoFields: true,
+  });
+  const [syncOverwrite, setSyncOverwrite] = useState<boolean>(false);
   const [syncTasks, setSyncTasks] = useState<Array<{
     id: number;
     label: string;
@@ -638,6 +662,15 @@ export const CasinoManager: React.FC = () => {
     setSyncStep("idle");
     setSyncError(null);
     setSyncHealedFields([]);
+    setSyncOverwrite(false); // Default to not force overwriting existing data
+    setSyncOptions({
+      casinoName: true,
+      casinoLogo: true,
+      bannerImage: true,
+      welcomeBonus: true,
+      landingContent: true,
+      seoFields: true,
+    });
     setSyncTasks([
       { id: 1, label: "Website Metadata Extraction", description: "Fetch target website headers, canonical link, title and basic descriptors", status: "pending" },
       { id: 2, label: "Brand Logo & Favicon Discovery", description: "Scrape meta elements and search highly-reliable favicon APIs for official logos", status: "pending" },
@@ -656,6 +689,28 @@ export const CasinoManager: React.FC = () => {
     setSyncStep("syncing");
     setSyncError(null);
 
+    // Build the tasks list dynamically based on what was selected
+    const tasks = [
+      { label: "Website Metadata Extraction", description: "Fetch target website headers, canonical link, title and basic descriptors", active: true },
+      { label: "Brand Logo & Favicon Discovery", description: "Scrape meta elements and search highly-reliable favicon APIs for official logos", active: syncOptions.casinoLogo },
+      { label: "Media Proxying & Optimization", description: "Upload brand logo and cover assets securely to Cloudinary with WebP conversion", active: syncOptions.casinoLogo || syncOptions.bannerImage },
+      { label: "AI Tagline Copywriting", description: "Use Gemini to analyze brand assets and copywrite/heal custom welcome bonus tagline", active: syncOptions.welcomeBonus },
+      { label: "AI Landing Content Compilation", description: "Compile custom Markdown review sections, feature highlights, FAQs and pros/cons via Gemini", active: syncOptions.landingContent },
+      { label: "SEO Meta Fields Alignment", description: "Formulate search-engine-ready meta descriptions, title schemas and tags", active: syncOptions.seoFields },
+      { label: "Writing Self-Healed States to DB", description: "Safely register all recovered elements to the Firebase Firestore database", active: true }
+    ];
+
+    const finalTasks = tasks
+      .filter(t => t.active)
+      .map((t, idx) => ({
+        id: idx + 1,
+        label: t.label,
+        description: t.description,
+        status: "pending" as "pending" | "processing" | "completed" | "failed"
+      }));
+
+    setSyncTasks(finalTasks);
+
     const updateTaskStatus = (taskId: number, status: "pending" | "processing" | "completed" | "failed") => {
       setSyncTasks((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, status } : t))
@@ -663,11 +718,15 @@ export const CasinoManager: React.FC = () => {
     };
 
     let currentActiveStep = 1;
-    updateTaskStatus(1, "processing");
+    if (finalTasks.length > 0) {
+      updateTaskStatus(1, "processing");
+    }
+
+    const totalSteps = finalTasks.length;
 
     // progress timer to simulate active task transitions while backend API completes
     const progressTimer = setInterval(() => {
-      if (currentActiveStep < 7) {
+      if (currentActiveStep < totalSteps) {
         updateTaskStatus(currentActiveStep, "completed");
         currentActiveStep += 1;
         updateTaskStatus(currentActiveStep, "processing");
@@ -675,7 +734,15 @@ export const CasinoManager: React.FC = () => {
     }, 1800);
 
     try {
-      const result = await refreshCasinoAssets(syncingCasino.id);
+      // Collect keys to send to backend API
+      const selectedTasks = Object.keys(syncOptions).filter(
+        (key) => syncOptions[key as keyof typeof syncOptions]
+      );
+
+      const result = await refreshCasinoAssets(syncingCasino.id, {
+        selectedTasks,
+        forceOverwrite: syncOverwrite
+      });
       clearInterval(progressTimer);
 
       if (result.success) {
@@ -1885,9 +1952,9 @@ export const CasinoManager: React.FC = () => {
                       {/* Brand Logo */}
                       <td className="px-6 py-4">
                         <div className="w-12 h-12 rounded-xl border bg-white overflow-hidden flex items-center justify-center p-1.5 shadow-sm">
-                          {c.casinoLogo ? (
+                          {getNormalizedLogo(c) ? (
                             <img
-                              src={c.casinoLogo}
+                              src={getNormalizedLogo(c)}
                               alt={c.casinoName}
                               className="w-full h-full object-contain"
                               referrerPolicy="no-referrer"
@@ -2083,10 +2150,10 @@ export const CasinoManager: React.FC = () => {
                 )}
 
                 <div className="relative z-10 text-center px-4 space-y-3">
-                  {previewCasino.casinoLogo && (
+                  {getNormalizedLogo(previewCasino) && (
                     <div className="w-16 h-16 rounded-2xl bg-white p-1 mx-auto flex items-center justify-center shadow-lg">
                       <img
-                        src={previewCasino.casinoLogo}
+                        src={getNormalizedLogo(previewCasino)}
                         alt="Logo"
                         className="w-full h-full object-contain"
                         referrerPolicy="no-referrer"
@@ -2219,14 +2286,14 @@ export const CasinoManager: React.FC = () => {
                 </div>
                 <div className="space-y-2">
                   <h3 className="font-display font-black text-lg text-slate-900 tracking-tight">
-                    Gemini AI Copywriter Active...
+                    AI Copywriter & Automatic Fallback Engine Active...
                   </h3>
                   <p className="text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
-                    Gemini 2.5 Flash is actively crawling the destination link, analyzing brand metadata, and writing complete landing page content, reviews, SEO tags, and FAQs.
+                    The background engine is actively crawling the destination link, analyzing website metadata, and compiling the landing review, slogans, SEO metadata, and FAQs automatically.
                   </p>
                 </div>
                 <div className="bg-purple-50/50 border border-purple-150/40 rounded-xl p-3 text-[10px] text-purple-700 font-medium leading-normal text-left">
-                  💡 This background operation typically takes 10 to 25 seconds depending on server speed.
+                  💡 <strong>100% Free Auto-Heuristic Engine Engaged:</strong> If your server does not have a Gemini API key configured, or if the API is rate-limited, our custom local parser automatically builds high-converting review descriptions and structures in milliseconds — completely free of charge!
                 </div>
               </div>
             )}
@@ -2384,31 +2451,111 @@ export const CasinoManager: React.FC = () => {
                   </div>
 
                   <div className="space-y-3">
-                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Diagnostics Checklist</span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-650 font-bold">
-                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
-                        <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
-                        <span>Crawl live landing page metadata</span>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Configure Sync Target Tasks</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <label className="flex items-start gap-2.5 p-2.5 bg-slate-50 hover:bg-indigo-50/30 rounded-xl border border-slate-150 cursor-pointer transition select-none">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                          checked={syncOptions.casinoName}
+                          onChange={(e) => setSyncOptions(prev => ({ ...prev, casinoName: e.target.checked }))}
+                        />
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-black text-slate-800 block">Brand Name</span>
+                          <span className="text-[10px] text-slate-500 font-medium block leading-tight">Recover official brand name from metadata</span>
+                        </div>
+                      </label>
+
+                      <label className="flex items-start gap-2.5 p-2.5 bg-slate-50 hover:bg-indigo-50/30 rounded-xl border border-slate-150 cursor-pointer transition select-none">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                          checked={syncOptions.casinoLogo}
+                          onChange={(e) => setSyncOptions(prev => ({ ...prev, casinoLogo: e.target.checked }))}
+                        />
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-black text-slate-800 block">Brand Logo</span>
+                          <span className="text-[10px] text-slate-500 font-medium block leading-tight">Scrape logo and optimize via Cloudinary</span>
+                        </div>
+                      </label>
+
+                      <label className="flex items-start gap-2.5 p-2.5 bg-slate-50 hover:bg-indigo-50/30 rounded-xl border border-slate-150 cursor-pointer transition select-none">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                          checked={syncOptions.bannerImage}
+                          onChange={(e) => setSyncOptions(prev => ({ ...prev, bannerImage: e.target.checked }))}
+                        />
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-black text-slate-800 block">Cover Banner</span>
+                          <span className="text-[10px] text-slate-500 font-medium block leading-tight">Extract background artwork from site meta</span>
+                        </div>
+                      </label>
+
+                      <label className="flex items-start gap-2.5 p-2.5 bg-slate-50 hover:bg-indigo-50/30 rounded-xl border border-slate-150 cursor-pointer transition select-none">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                          checked={syncOptions.welcomeBonus}
+                          onChange={(e) => setSyncOptions(prev => ({ ...prev, welcomeBonus: e.target.checked }))}
+                        />
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-black text-slate-800 block">AI Welcome Slogan</span>
+                          <span className="text-[10px] text-slate-500 font-medium block leading-tight">Copywrite catchment slogan using Gemini</span>
+                        </div>
+                      </label>
+
+                      <label className="flex items-start gap-2.5 p-2.5 bg-slate-50 hover:bg-indigo-50/30 rounded-xl border border-slate-150 cursor-pointer transition select-none">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                          checked={syncOptions.landingContent}
+                          onChange={(e) => setSyncOptions(prev => ({ ...prev, landingContent: e.target.checked }))}
+                        />
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-black text-slate-800 block">AI Landers & Review FAQ</span>
+                          <span className="text-[10px] text-slate-500 font-medium block leading-tight">Draft full lander content and FAQ cards</span>
+                        </div>
+                      </label>
+
+                      <label className="flex items-start gap-2.5 p-2.5 bg-slate-50 hover:bg-indigo-50/30 rounded-xl border border-slate-150 cursor-pointer transition select-none">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                          checked={syncOptions.seoFields}
+                          onChange={(e) => setSyncOptions(prev => ({ ...prev, seoFields: e.target.checked }))}
+                        />
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-black text-slate-800 block">SEO Meta Configuration</span>
+                          <span className="text-[10px] text-slate-500 font-medium block leading-tight">Formulate search title, tags, and keywords</span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-slate-50/80 border border-slate-150 rounded-2xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5 pr-2">
+                        <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                          <AlertTriangle className="w-4 h-4 text-amber-500" />
+                          Force Overwrite Existing Data
+                        </span>
+                        <p className="text-[10px] text-slate-500 font-semibold leading-snug">
+                          When enabled, the sync engine will actively regenerate and replace existing fields. If disabled, only empty/placeholder elements are repaired.
+                        </p>
                       </div>
-                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
-                        <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
-                        <span>Fetch high-res brand logos</span>
-                      </div>
-                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
-                        <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
-                        <span>Upload logo securely to Cloudinary</span>
-                      </div>
-                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
-                        <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
-                        <span>Gemini tagline copywriting</span>
-                      </div>
-                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
-                        <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
-                        <span>Full Markdown review draft</span>
-                      </div>
-                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
-                        <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
-                        <span>SEO tag and keyword optimization</span>
+                      <div className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          className="sr-only peer"
+                          id="sync-overwrite-switch"
+                          checked={syncOverwrite}
+                          onChange={(e) => setSyncOverwrite(e.target.checked)}
+                        />
+                        <label
+                          htmlFor="sync-overwrite-switch"
+                          className="w-11 h-6 bg-slate-200 rounded-full peer peer-focus:ring-2 peer-focus:ring-indigo-300 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600 cursor-pointer"
+                        />
                       </div>
                     </div>
                   </div>

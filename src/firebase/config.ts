@@ -1,14 +1,15 @@
 import { initializeApp } from "firebase/app";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "firebase/app-check";
+import appletConfig from "../../firebase-applet-config.json";
 
 export const firebaseConfig = {
-  apiKey: "AIzaSyCSQTPRXQIF4cMvWs5g3YHgTitYx0qr4sw",
-  authDomain: "eker-online-casino-listing.firebaseapp.com",
-  projectId: "eker-online-casino-listing",
-  storageBucket: "eker-online-casino-listing.firebasestorage.app",
-  messagingSenderId: "253465047111",
-  appId: "1:253465047111:web:7fd1edf74df8414c634162",
-  measurementId: "G-Z2NQ7M636F"
+  apiKey: appletConfig.apiKey,
+  authDomain: appletConfig.authDomain,
+  projectId: appletConfig.projectId,
+  storageBucket: appletConfig.storageBucket,
+  messagingSenderId: appletConfig.messagingSenderId,
+  appId: appletConfig.appId,
+  measurementId: appletConfig.measurementId || ""
 };
 
 // Initialize App

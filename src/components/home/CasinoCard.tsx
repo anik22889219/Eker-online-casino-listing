@@ -23,6 +23,18 @@ export const CasinoCard: React.FC<CasinoCardProps> = ({ casino }) => {
     affiliateLink,
   } = casino;
 
+  // Professional fallback resolution for premium custom logos
+  let resolvedLogo = casinoLogo;
+  if (casinoName) {
+    const nameLower = casinoName.toLowerCase();
+    const linkLower = (affiliateLink || "").toLowerCase();
+    if (nameLower.includes("tk10") || linkLower.includes("tk10")) {
+      resolvedLogo = "/tk10_logo.jpg";
+    } else if (nameLower.includes("qq777") || linkLower.includes("qq777")) {
+      resolvedLogo = "/qq777_logo.jpg";
+    }
+  }
+
   const handleVisitClick = (e: React.MouseEvent) => {
     // Perform non-blocking affiliate click tracking
     trackAffiliateClick(id, casinoName);
@@ -81,9 +93,9 @@ export const CasinoCard: React.FC<CasinoCardProps> = ({ casino }) => {
         
         {/* Floating Casino Logo (Overlapping banner) */}
         <div className="absolute -top-7 sm:-top-9 left-4 sm:left-5 z-20 h-12 w-12 sm:h-16 sm:w-16 rounded-2xl bg-white p-1 shadow-md border border-slate-100/90 flex items-center justify-center overflow-hidden transition-all duration-300 group-hover:scale-105 group-hover:-translate-y-0.5 group-hover:shadow-lg">
-          {casinoLogo ? (
+          {resolvedLogo ? (
             <img
-              src={casinoLogo}
+              src={resolvedLogo}
               alt={`${casinoName} logo`}
               className="h-full w-full object-contain rounded-xl"
               referrerPolicy="no-referrer"

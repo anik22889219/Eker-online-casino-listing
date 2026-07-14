@@ -1,10 +1,10 @@
 {
   "projectId": "eker-online-casino-listing",
-  "appId": "1:253465047111:web:7fd1edf74df8414c634162",
+  "appId": "1:253465047111:web:02a1c2800e8e3c4b634162",
   "apiKey": "AIzaSyCSQTPRXQIF4cMvWs5g3YHgTitYx0qr4sw",
   "authDomain": "eker-online-casino-listing.firebaseapp.com",
   "firestoreDatabaseId": "(default)",
   "storageBucket": "eker-online-casino-listing.firebasestorage.app",
   "messagingSenderId": "253465047111",
-  "measurementId": "G-Z2NQ7M636F"
+  "measurementId": ""
 }

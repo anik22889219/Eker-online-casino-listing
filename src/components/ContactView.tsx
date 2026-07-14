@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Mail, Phone, MapPin, Send, CheckCircle, Loader2, Sparkles } from "lucide-react";
 import { db, handleFirestoreError, OperationType } from "../firebase";
-import { collection, addDoc } from "firebase/firestore";
+import { collection, addDoc, doc, getDoc } from "firebase/firestore";
 
 export default function ContactView() {
   const [name, setName] = useState("");
@@ -11,6 +11,33 @@ export default function ContactView() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+
+  const [config, setConfig] = useState({
+    email: "broker@ekerlistings.com",
+    phone: "+1 (888) 555-EKER",
+    address: "Valletta, Malta",
+    description: "Have a partnership inquiry, advertising campaign pitch, or need review support? Reach out to our brokerage desk."
+  });
+
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const snap = await getDoc(doc(db, "contactInfo", "info"));
+        if (snap.exists()) {
+          const data = snap.data();
+          setConfig({
+            email: data.email || "broker@ekerlistings.com",
+            phone: data.phone || "+1 (888) 555-EKER",
+            address: data.address || "Valletta, Malta",
+            description: data.description || "Have a partnership inquiry, advertising campaign pitch, or need review support? Reach out to our brokerage desk."
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to fetch contactInfo config:", err);
+      }
+    };
+    fetchConfig();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,7 +82,7 @@ export default function ContactView() {
           Get in Touch
         </h1>
         <p className="text-sm text-slate-500 max-w-xl mx-auto leading-relaxed">
-          Have a partnership inquiry, advertising campaign pitch, or need review support? Reach out to our brokerage desk.
+          {config.description}
         </p>
       </div>
 
@@ -74,7 +101,7 @@ export default function ContactView() {
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Email Support</p>
-                  <p className="text-xs font-semibold text-slate-800">broker@ekerlistings.com</p>
+                  <p className="text-xs font-semibold text-slate-800">{config.email}</p>
                 </div>
               </div>
 
@@ -84,7 +111,7 @@ export default function ContactView() {
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Hotline VIP</p>
-                  <p className="text-xs font-semibold text-slate-800">+1 (888) 555-EKER</p>
+                  <p className="text-xs font-semibold text-slate-800">{config.phone}</p>
                 </div>
               </div>
 
@@ -94,7 +121,7 @@ export default function ContactView() {
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Broker Headquarter</p>
-                  <p className="text-xs font-semibold text-slate-800">Valletta, Malta</p>
+                  <p className="text-xs font-semibold text-slate-800">{config.address}</p>
                 </div>
               </div>
             </div>

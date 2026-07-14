@@ -26,6 +26,13 @@ import {
   ShieldCheck,
   Settings as SettingsIcon,
   Users as UsersIcon,
+  LayoutDashboard,
+  Building2,
+  Percent,
+  BookOpen,
+  Mail,
+  Image as ImageIcon,
+  Palette,
 } from "lucide-react";
 import { AffiliateLink, UserProfile } from "../types";
 import AnalyticsSection from "./AnalyticsSection";
@@ -43,6 +50,9 @@ import { ModerationManager } from "./admin/ModerationManager";
 import { CasinoAnalytics } from "./admin/CasinoAnalytics";
 import { JackpotListing } from "./JackpotListing";
 import { ContentManager } from "./admin/ContentManager";
+import { BlogManager } from "./admin/BlogManager";
+import { ContactPageManager } from "./admin/ContactPageManager";
+import { ThemeEditor } from "./admin/ThemeEditor";
 
 interface AdminPanelProps {
   deals: AffiliateLink[];
@@ -72,12 +82,6 @@ export default function AdminPanel({
   });
   const [isSidebarOpenMobile, setIsSidebarOpenMobile] = useState<boolean>(false);
   const [reviewSubTab, setReviewSubTab] = useState<"moderation" | "submit">("moderation");
-
-  // Component-level check if current user is admin/moderator
-  const isUserModeratorOrAdmin = currentUser && (
-    currentUser.email === "aminulhoqueanik@gmail.com" ||
-    (userProfile && (userProfile.role === "moderator" || userProfile.role === "admin" || userProfile.role === "super_admin"))
-  );
 
   // Sync tab from URL changes
   useEffect(() => {
@@ -612,12 +616,16 @@ export default function AdminPanel({
   const getHeaderTitle = () => {
     switch (activeTab) {
       case 'overview': return 'Command Center Dashboard';
+      case 'creator': return 'Creator Hub Launcher';
       case 'casinos': return 'Casino Listings Asset Manager';
       case 'bonuses': return 'Promo Campaign & Bonuses Manager';
       case 'review-submission': return 'Review Submission';
       case 'casino-analytics': return 'Casino Conversion Analytics';
       case 'sell-requests': return 'Affiliate Sell Requests';
       case 'banners': return 'Content & Media Library Manager';
+      case 'theme-editor': return 'Theme & Visual Editor';
+      case 'blogs': return 'Dynamic Blog & Article Manager';
+      case 'contact-desk': return 'Contact Page & Inbox Desk';
       case 'analytics': return 'Performance & Analytics';
       case 'profile': return 'Header & Branding Bio';
       case 'settings': return 'System Settings';
@@ -804,6 +812,66 @@ export default function AdminPanel({
             </div>
           )}
 
+          {activeTab === "creator" && (
+            <div className="space-y-6">
+              {/* Creator Portal - Sidebar Pages Launchpad Grid (Bengali-Friendly) */}
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <div className="h-6 w-1 bg-indigo-600 rounded-full animate-pulse" />
+                      <h3 className="font-display font-black text-slate-900 text-lg tracking-tight">
+                        Creator Portal Hub (Quick Launchpad)
+                      </h3>
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium">
+                      আপনার সবগুলো এডমিন ও ক্রিয়েটর পেইজের এক্সেস এবং কন্ট্রোল প্যানেল এখানে গ্রিড আকারে সাজানো রয়েছে।
+                    </p>
+                  </div>
+                  <span className="self-start sm:self-center text-[10px] uppercase font-black tracking-wider text-indigo-700 bg-indigo-50 border border-indigo-100/80 px-2.5 py-1 rounded-md shrink-0">
+                    11 Modules Connected
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+                  {[
+                    { id: 'overview', label: 'Command Overview', icon: LayoutDashboard, color: 'text-indigo-600 bg-indigo-50 border-indigo-100/50 hover:bg-indigo-50/20' },
+                    { id: 'casinos', label: 'Casino Listings', icon: Building2, color: 'text-emerald-600 bg-emerald-50 border-emerald-100/50 hover:bg-emerald-50/20' },
+                    { id: 'bonuses', label: 'Campaign Bonuses', icon: Percent, color: 'text-amber-600 bg-amber-50 border-amber-100/50 hover:bg-amber-50/20' },
+                    { id: 'review-submission', label: 'Review Submission', icon: ShieldCheck, color: 'text-rose-600 bg-rose-50 border-rose-100/50 hover:bg-rose-50/20' },
+                    { id: 'sell-requests', label: 'Sell Requests', icon: TrendingUp, color: 'text-cyan-600 bg-cyan-50 border-cyan-100/50 hover:bg-cyan-50/20' },
+                    { id: 'blogs', label: 'Manage Blogs', icon: BookOpen, color: 'text-blue-600 bg-blue-50 border-blue-100/50 hover:bg-blue-50/20' },
+                    { id: 'contact-desk', label: 'Contact Inbox', icon: Mail, color: 'text-violet-600 bg-violet-50 border-violet-100/50 hover:bg-violet-50/20' },
+                    { id: 'banners', label: 'Content Manager', icon: ImageIcon, color: 'text-purple-600 bg-purple-50 border-purple-100/50 hover:bg-purple-50/20' },
+                    { id: 'theme-editor', label: 'Theme Editor', icon: Palette, color: 'text-fuchsia-600 bg-fuchsia-50 border-fuchsia-100/50 hover:bg-fuchsia-50/20' },
+                    { id: 'settings', label: 'Settings', icon: SettingsIcon, color: 'text-slate-600 bg-slate-50 border-slate-100/50 hover:bg-slate-50/20' },
+                    { id: 'users', label: 'User Manager', icon: UsersIcon, color: 'text-teal-600 bg-teal-50 border-teal-100/50 hover:bg-teal-50/20' },
+                  ].map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => {
+                          setActiveTab(item.id);
+                          const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + "?tab=" + item.id;
+                          window.history.pushState({ path: newUrl }, "", newUrl);
+                        }}
+                        className="group relative overflow-hidden bg-white border border-slate-200/70 p-4 rounded-2xl cursor-pointer hover:shadow-md hover:border-indigo-400/80 hover:-translate-y-0.5 transition-all duration-300 flex flex-col items-center text-center justify-center min-h-[120px]"
+                      >
+                        <div className={`inline-flex items-center justify-center p-3.5 rounded-xl border ${item.color} transition-all duration-300 group-hover:scale-110 shadow-xs mb-3`}>
+                          <Icon className="w-5 h-5" />
+                        </div>
+                        <h4 className="font-display font-bold text-slate-800 text-xs sm:text-sm tracking-tight group-hover:text-indigo-600 transition-colors">
+                          {item.label}
+                        </h4>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === "casinos" && <CasinoManager />}
 
           {activeTab === "bonuses" && <BonusManager />}
@@ -847,7 +915,13 @@ export default function AdminPanel({
 
           {activeTab === "sell-requests" && <SellRequestsManager />}
 
-          {activeTab === "banners" && <ContentManager isAdminOrMod={!!isUserModeratorOrAdmin} />}
+          {activeTab === "banners" && <ContentManager />}
+
+          {activeTab === "theme-editor" && <ThemeEditor />}
+
+          {activeTab === "blogs" && <BlogManager deals={deals} />}
+
+          {activeTab === "contact-desk" && <ContactPageManager />}
 
           {activeTab === "analytics" && <AnalyticsSection deals={deals} />}
 

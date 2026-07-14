@@ -238,6 +238,53 @@
         "anonymousVisitorId": { "type": "string" }
       },
       "required": ["casinoId", "timestamp", "anonymousVisitorId"]
+    },
+    "BlogPost": {
+      "title": "Blog Post",
+      "description": "A dynamic blog post article or guide.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "excerpt": { "type": "string" },
+        "category": { "type": "string" },
+        "date": { "type": "string" },
+        "author": { "type": "string" },
+        "readTime": { "type": "string" },
+        "featured": { "type": "boolean" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "excerpt", "category", "author", "readTime", "content", "createdAt"]
+    },
+    "ContactInfo": {
+      "title": "Contact Info",
+      "description": "Dynamic support helpdesk settings on the Contact Us page.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "description": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "phone", "address", "description", "updatedAt"]
+    },
+    "ContactMessage": {
+      "title": "Contact Message",
+      "description": "Inbound inquiry submissions from visitors.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "subject": { "type": "string" },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["unread", "read"] }
+      },
+      "required": ["name", "email", "subject", "message", "createdAt", "status"]
     }
   },
   "firestore": {
@@ -296,6 +343,18 @@
     "/pageViews/{pageViewId}": {
       "schema": "PageViewRecord",
       "description": "Individually tracked page impressions for CTR metrics."
+    },
+    "/blogs/{blogId}": {
+      "schema": "BlogPost",
+      "description": "Dynamic blog post guides and promotions."
+    },
+    "/contactInfo/{infoId}": {
+      "schema": "ContactInfo",
+      "description": "Dynamic contact page details."
+    },
+    "/contactMessages/{messageId}": {
+      "schema": "ContactMessage",
+      "description": "Customer lead submissions and queries."
     }
   }
 }

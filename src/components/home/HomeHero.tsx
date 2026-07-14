@@ -25,9 +25,15 @@ import defaultDemoScreenshot from "../../assets/images/demo_screenshot_178315150
 // @ts-ignore
 import defaultDemoBalance from "../../assets/images/demo_balance_1783152014334.jpg";
 
-interface HomeHeroProps {}
+interface HomeHeroProps {
+  config?: {
+    title?: string;
+    subtitle?: string;
+    actionText?: string;
+  };
+}
 
-export const HomeHero: React.FC<HomeHeroProps> = () => {
+export const HomeHero: React.FC<HomeHeroProps> = ({ config }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [user, setUser] = useState<User | null>(auth.currentUser);
 
@@ -216,7 +222,7 @@ export const HomeHero: React.FC<HomeHeroProps> = () => {
   };
 
   return (
-    <div className="bg-slate-950 text-white rounded-3xl p-6 sm:p-10 shadow-2xl relative overflow-hidden mb-10 border border-slate-800/85">
+    <div className="bg-slate-950 text-white rounded-3xl p-6 sm:p-10 shadow-2xl relative overflow-hidden border border-slate-800/85">
       {/* Background ambient accents */}
       <div className="absolute right-0 top-0 -mr-20 -mt-20 h-80 w-80 rounded-full bg-indigo-600/10 blur-3xl pointer-events-none animate-pulse" />
       <div className="absolute left-1/3 bottom-0 -mb-20 h-80 w-80 rounded-full bg-emerald-600/5 blur-3xl pointer-events-none" />
@@ -238,11 +244,17 @@ export const HomeHero: React.FC<HomeHeroProps> = () => {
 
           {/* Headline */}
           <h1 className="font-display font-black text-3xl sm:text-5xl tracking-tight leading-tight text-white">
-            আপনার জ্যাকপট স্ক্রিনশট <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-500 to-rose-450 font-black">বিক্রি করুন!</span> 🎰
+            {config?.title ? (
+              config.title
+            ) : (
+              <>
+                আপনার জ্যাকপট স্ক্রিনশট <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-500 to-rose-450 font-black">বিক্রি করুন!</span> 🎰
+              </>
+            )}
           </h1>
 
           <p className="text-slate-350 text-xs sm:text-sm leading-relaxed font-semibold max-w-2xl mx-auto lg:mx-0">
-            আমরা আপনার ক্যাসিনো বা স্লট গেমের বড় জ্যাকপট এবং ব্যালেন্স স্ক্রিনশট উপযুক্ত মূল্যে কিনে নিচ্ছি। নিচে আমাদের রিওয়ার্ড টিয়ার দেখে নিন এবং সরাসরি বিকাশ পেমেন্ট পেতে এখনই বিক্রি করুন!
+            {config?.subtitle || "আমরা আপনার ক্যাসিনো বা স্লট গেমের বড় জ্যাকপট এবং ব্যালেন্স স্ক্রিনশট উপযুক্ত মূল্যে কিনে নিচ্ছি। নিচে আমাদের রিওয়ার্ড টিয়ার দেখে নিন এবং সরাসরি বিকাশ পেমেন্ট পেতে এখনই বিক্রি করুন!"}
           </p>
 
           {/* Pricing Grid */}
@@ -270,7 +282,7 @@ export const HomeHero: React.FC<HomeHeroProps> = () => {
               className="px-8 py-4 bg-linear-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white font-extrabold text-sm sm:text-base rounded-2xl shadow-xl shadow-orange-500/10 hover:shadow-orange-500/20 hover:-translate-y-0.5 transition-all duration-300 flex items-center justify-center gap-2.5 mx-auto lg:mx-0 cursor-pointer"
             >
               <Coins className="w-5 h-5" />
-              <span>সরাসরি বিক্রি করুন (Sell Now)</span>
+              <span>{config?.actionText || "সরাসরি বিক্রি করুন (Sell Now)"}</span>
             </button>
           </div>
         </div>

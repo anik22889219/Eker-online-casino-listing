@@ -3,12 +3,14 @@ import { app, firebaseConfig } from "./config";
 import { auth } from "./auth";
 import { LoggingService } from "../services/LoggingService";
 
-// Initialize Firestore with correct database ID
-const dbId = firebaseConfig.projectId === "gen-lang-client-0213435563"
-  ? "ai-studio-3979928c-2bc4-418f-b93b-6eaa3dc5f571"
-  : "(default)";
+import appletConfig from "../../firebase-applet-config.json";
 
-export const db = initializeFirestore(app, {}, dbId);
+// Initialize Firestore with correct database ID from applet config
+const dbId = appletConfig.firestoreDatabaseId;
+
+export const db = (dbId && dbId !== "(default)")
+  ? initializeFirestore(app, {}, dbId)
+  : initializeFirestore(app, {});
 
 export enum OperationType {
   CREATE = 'create',

@@ -55,11 +55,7 @@ interface ImageUsage {
   refId: string;
 }
 
-interface ContentManagerProps {
-  isAdminOrMod?: boolean;
-}
-
-export const ContentManager: React.FC<ContentManagerProps> = ({ isAdminOrMod = false }) => {
+export const ContentManager: React.FC = () => {
   const [assets, setAssets] = useState<MediaAsset[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [isUploading, setIsUploading] = useState<boolean>(false);
@@ -95,7 +91,6 @@ export const ContentManager: React.FC<ContentManagerProps> = ({ isAdminOrMod = f
 
   // Scan all other collections to build a usage tree
   const scanDatabaseUsage = async () => {
-    if (!isAdminOrMod) return;
     setIsScanningUsage(true);
     const newUsageMap: Record<string, ImageUsage[]> = {};
 
@@ -229,10 +224,8 @@ export const ContentManager: React.FC<ContentManagerProps> = ({ isAdminOrMod = f
 
   // Sync mediaAssets and dynamically discover any other images
   useEffect(() => {
-    // Run initial usage scan if authorized
-    if (isAdminOrMod) {
-      scanDatabaseUsage();
-    }
+    // Run initial usage scan
+    scanDatabaseUsage();
 
     const unsubscribe = onSnapshot(
       collection(db, "mediaAssets"),
@@ -269,30 +262,28 @@ export const ContentManager: React.FC<ContentManagerProps> = ({ isAdminOrMod = f
           }
         };
 
-        // Scan current active maps or database documents to harvesting images (Only if admin or moderator)
-        if (isAdminOrMod) {
-          try {
-            const casinosSnap = await getDocs(collection(db, "casinos"));
-            casinosSnap.forEach((d) => {
-              const data = d.data();
-              if (data.casinoLogo) addDiscovered(data.casinoLogo, `${data.casinoName || "casino"}_logo.png`, "logos");
-              if (data.bannerImage) addDiscovered(data.bannerImage, `${data.casinoName || "casino"}_banner.png`, "banners");
-            });
+        // Scan current active maps or database documents to harvesting images
+        try {
+          const casinosSnap = await getDocs(collection(db, "casinos"));
+          casinosSnap.forEach((d) => {
+            const data = d.data();
+            if (data.casinoLogo) addDiscovered(data.casinoLogo, `${data.casinoName || "casino"}_logo.png`, "logos");
+            if (data.bannerImage) addDiscovered(data.bannerImage, `${data.casinoName || "casino"}_banner.png`, "banners");
+          });
 
-            const bannersSnap = await getDocs(collection(db, "banners"));
-            bannersSnap.forEach((d) => {
-              const data = d.data();
-              if (data.imageUrl) addDiscovered(data.imageUrl, `${data.title || "banner"}_promo.png`, "banners");
-            });
+          const bannersSnap = await getDocs(collection(db, "banners"));
+          bannersSnap.forEach((d) => {
+            const data = d.data();
+            if (data.imageUrl) addDiscovered(data.imageUrl, `${data.title || "banner"}_promo.png`, "banners");
+          });
 
-            const jackpotsSnap = await getDocs(collection(db, "jackpotScreenshots"));
-            jackpotsSnap.forEach((d) => {
-              const data = d.data();
-              if (data.image) addDiscovered(data.image, `jackpot_proof_${d.id}.png`, "jackpots");
-            });
-          } catch (e) {
-            console.warn("Error harvesting current listing images:", e);
-          }
+          const jackpotsSnap = await getDocs(collection(db, "jackpotScreenshots"));
+          jackpotsSnap.forEach((d) => {
+            const data = d.data();
+            if (data.image) addDiscovered(data.image, `jackpot_proof_${d.id}.png`, "jackpots");
+          });
+        } catch (e) {
+          console.warn("Error harvesting current listing images:", e);
         }
 
         const discoveredList = Object.values(discoveredMap);
@@ -307,7 +298,7 @@ export const ContentManager: React.FC<ContentManagerProps> = ({ isAdminOrMod = f
     );
 
     return unsubscribe;
-  }, [isAdminOrMod]);
+  }, []);
 
   // Helper: check if asset is in use
   const getAssetUsages = (asset: MediaAsset): ImageUsage[] => {

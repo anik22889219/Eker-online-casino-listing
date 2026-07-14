@@ -137,3 +137,47 @@ export interface SystemSettings {
   demoScreenshotUrl?: string;
   demoBalanceUrl?: string;
 }
+
+export interface ThemeGlobalSettings {
+  logoText: string;
+  logoUrl: string;
+  faviconText: string;
+  faviconUrl: string;
+  fontFamily: string;
+  primaryColor: string;
+  secondaryColor: string;
+  backgroundColor: string;
+  textColor: string;
+  cardBackgroundColor: string;
+  layoutType: "boxed" | "wide";
+  cardBorderRadius: string;
+  sectionSpacing: string;
+}
+
+export interface ThemeSection {
+  id: string;
+  type: "hero" | "featured_operators" | "latest_listings" | "top_rated" | "sell_cta" | "faq" | "custom";
+  title: string;
+  subtitle?: string;
+  enabled: boolean;
+  content?: string;
+  actionText?: string;
+  actionUrl?: string;
+  backgroundGradientStart?: string;
+  backgroundGradientEnd?: string;
+  customBackgroundColor?: string;
+  customTextColor?: string;
+  tier1Range?: string;
+  tier1Reward?: string;
+  tier2Range?: string;
+  tier2Reward?: string;
+  faqs?: Array<{ question: string; answer: string }>;
+}
+
+export interface ThemeConfig {
+  id: string;
+  globalSettings: ThemeGlobalSettings;
+  sections: ThemeSection[];
+  updatedAt: string;
+}
+

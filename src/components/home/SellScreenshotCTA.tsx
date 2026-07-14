@@ -8,7 +8,15 @@ import { useCasinos } from "../../hooks/useCasinos";
 // @ts-ignore
 import defaultDemoScreenshot from "../../assets/images/demo_screenshot_1783151508532.jpg";
 
-export const SellScreenshotCTA: React.FC = () => {
+interface SellScreenshotCTAProps {
+  config?: {
+    title?: string;
+    subtitle?: string;
+    actionText?: string;
+  };
+}
+
+export const SellScreenshotCTA: React.FC<SellScreenshotCTAProps> = ({ config }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -189,10 +197,16 @@ export const SellScreenshotCTA: React.FC = () => {
             Cash Out Your Win Slip
           </span>
           <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white leading-none">
-            Have a Winning Screenshot? <span className="text-indigo-400">We buy them from you!</span>
+            {config?.title ? (
+              config.title
+            ) : (
+              <>
+                Have a Winning Screenshot? <span className="text-indigo-400">We buy them from you!</span>
+              </>
+            )}
           </h2>
           <p className="text-slate-350 text-xs sm:text-sm font-medium leading-relaxed">
-            Sell your high-roller or lucky-win screenshots to help other players identify high-payout opportunities. Get paid instantly when our validation desk approves your win records.
+            {config?.subtitle || "Sell your high-roller or lucky-win screenshots to help other players identify high-payout opportunities. Get paid instantly when our validation desk approves your win records."}
           </p>
         </div>
 
@@ -206,7 +220,7 @@ export const SellScreenshotCTA: React.FC = () => {
           className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm px-6 py-3 rounded-xl transition shadow-lg shrink-0 self-start md:self-center cursor-pointer flex items-center gap-2"
         >
           <Sparkles className="h-4 w-4" />
-          <span>Sell Winning Screenshot</span>
+          <span>{config?.actionText || "Sell Your Jackpot Screenshot"}</span>
         </button>
       </div>
 

@@ -28,6 +28,21 @@ import {
 import { useNavigate, Link } from "react-router-dom";
 import SeoHelper from "./SeoHelper";
 
+// Utility helper to resolve custom premium local logos
+const getNormalizedLogo = (casino: any) => {
+  if (!casino) return "";
+  const logo = casino.casinoLogo;
+  const name = (casino.casinoName || "").toLowerCase();
+  const link = (casino.affiliateLink || "").toLowerCase();
+  if (name.includes("tk10") || link.includes("tk15") || link.includes("tk10")) {
+    return "/tk10_logo.jpg";
+  }
+  if (name.includes("qq777") || link.includes("qq777")) {
+    return "/qq777_logo.jpg";
+  }
+  return logo;
+};
+
 interface JackpotListingProps {
   isAdmin?: boolean;
 }
@@ -481,9 +496,9 @@ export const JackpotListing: React.FC<JackpotListingProps> = ({ isAdmin = false 
                     </span>
                   ) : selectedCasino ? (
                     <span className="flex items-center gap-2.5">
-                      {selectedCasino.casinoLogo ? (
+                      {getNormalizedLogo(selectedCasino) ? (
                         <img 
-                          src={selectedCasino.casinoLogo} 
+                          src={getNormalizedLogo(selectedCasino)} 
                           alt="" 
                           className="h-6 w-6 object-contain rounded bg-white p-0.5 border border-slate-100"
                           referrerPolicy="no-referrer"
@@ -531,9 +546,9 @@ export const JackpotListing: React.FC<JackpotListingProps> = ({ isAdmin = false 
                             }}
                             className="w-full text-left px-4 py-3 hover:bg-indigo-50/45 transition text-xs font-semibold text-slate-700 flex items-center gap-2.5"
                           >
-                            {c.casinoLogo ? (
+                            {getNormalizedLogo(c) ? (
                               <img 
-                                src={c.casinoLogo} 
+                                src={getNormalizedLogo(c)} 
                                 alt="" 
                                 className="h-5 w-5 object-contain rounded bg-slate-100 p-0.5"
                                 referrerPolicy="no-referrer"
@@ -808,9 +823,9 @@ export const JackpotListing: React.FC<JackpotListingProps> = ({ isAdmin = false 
                         {/* Operator info */}
                         <td className="py-4 px-4">
                           <div className="flex items-center gap-2.5">
-                            {matchedCasino?.casinoLogo ? (
+                            {getNormalizedLogo(matchedCasino) ? (
                               <img
-                                src={matchedCasino.casinoLogo}
+                                src={getNormalizedLogo(matchedCasino)}
                                 alt=""
                                 className="h-7 w-7 rounded-lg object-contain bg-slate-50 p-0.5 border border-slate-150"
                                 referrerPolicy="no-referrer"
@@ -938,9 +953,9 @@ export const JackpotListing: React.FC<JackpotListingProps> = ({ isAdmin = false 
                     {/* Header: Logo, Name & Withdraw option */}
                     <div className="flex items-start justify-between gap-2.5">
                       <div className="flex items-center gap-2.5">
-                        {matchedCasino?.casinoLogo ? (
+                        {getNormalizedLogo(matchedCasino) ? (
                           <img
-                            src={matchedCasino.casinoLogo}
+                            src={getNormalizedLogo(matchedCasino)}
                             alt=""
                             className="h-8 w-8 rounded-lg object-contain bg-white p-0.5 border border-slate-200"
                             referrerPolicy="no-referrer"

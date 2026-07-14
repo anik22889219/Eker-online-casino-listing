@@ -6,11 +6,13 @@ import HomeHero from "./HomeHero";
 import CasinoCarousel from "./CasinoCarousel";
 import SellScreenshotCTA from "./SellScreenshotCTA";
 import HomeFaq from "./HomeFaq";
-import HomeFooter from "./HomeFooter";
+
 import SeoHelper from "../SeoHelper";
 import { Sparkles, Flame, Clock, RefreshCw, X } from "lucide-react";
+import { useTheme } from "../../context/ThemeContext";
 
 export const HomeView: React.FC = () => {
+  const { theme } = useTheme();
   const [casinos, setCasinos] = useState<Casino[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -72,7 +74,7 @@ export const HomeView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-12 animate-fade-in">
+    <div className="space-y-6 sm:space-y-8 md:space-y-10 animate-fade-in">
       <SeoHelper
         title="Best Verified Casino Offers & Welcome Bonuses"
         description="Explore verified online casino reviews, exclusive deposit-match offers, cashback codes, and validated jackpot screenshots on Eker."
@@ -80,65 +82,122 @@ export const HomeView: React.FC = () => {
         schemaJson={schemaJson}
       />
 
-      {/* 1 & 2 & 3. Hero */}
-      <HomeHero />
-
       {loading ? (
         <div className="text-center py-24 space-y-4">
           <RefreshCw className="h-10 w-10 animate-spin mx-auto text-indigo-600" />
           <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Compiling active directory listings...</p>
         </div>
       ) : (
-        <div className="space-y-12">
-          
-          {/* 4. Featured Casinos Section */}
-          {featuredCasinos.length > 0 && (
-            <section className="space-y-5">
-              <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-                <Sparkles className="h-5 w-5 text-amber-500" />
-                <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">Featured Operators</h2>
-              </div>
-              <CasinoCarousel casinos={featuredCasinos} />
-            </section>
-          )}
+        <div className="space-y-6 sm:space-y-8 md:space-y-10">
+          {theme.sections.map((sec) => {
+            if (!sec.enabled) return null;
 
-          {/* 5. Latest Casinos Section */}
-          <section className="space-y-5">
-            <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-              <Clock className="h-5 w-5 text-indigo-600" />
-              <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">Newly Added Listings</h2>
-            </div>
-            {latestCasinos.length === 0 ? (
-              <div className="text-center py-10 rounded-2xl border border-dashed border-slate-200 bg-white">
-                <p className="text-xs text-slate-400 font-bold uppercase">No matching listings found</p>
-              </div>
-            ) : (
-              <CasinoCarousel casinos={latestCasinos} />
-            )}
-          </section>
+            switch (sec.type) {
+              case "hero":
+                return <HomeHero key={sec.id} config={sec} />;
 
-          {/* 6. Popular Bonuses Section */}
-          {popularBonuses.length > 0 && (
-            <section className="space-y-5">
-              <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-                <Flame className="h-5 w-5 text-rose-500" />
-                <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">Top Rated Rewards</h2>
-              </div>
-              <CasinoCarousel casinos={popularBonuses} />
-            </section>
-          )}
+              case "featured_operators":
+                return featuredCasinos.length > 0 ? (
+                  <section key={sec.id} className="space-y-5">
+                    <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+                      <Sparkles className="h-5 w-5 text-amber-500" />
+                      <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
+                        {sec.title}
+                      </h2>
+                    </div>
+                    <CasinoCarousel casinos={featuredCasinos} />
+                  </section>
+                ) : null;
 
-          {/* 8. Sell Your Winning Screenshot CTA */}
-          <SellScreenshotCTA />
+              case "latest_listings":
+                return (
+                  <section key={sec.id} className="space-y-5">
+                    <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+                      <Clock className="h-5 w-5 text-indigo-600" />
+                      <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
+                        {sec.title}
+                      </h2>
+                    </div>
+                    {latestCasinos.length === 0 ? (
+                      <div className="text-center py-10 rounded-2xl border border-dashed border-slate-200 bg-white">
+                        <p className="text-xs text-slate-400 font-bold uppercase">No matching listings found</p>
+                      </div>
+                    ) : (
+                      <CasinoCarousel casinos={latestCasinos} />
+                    )}
+                  </section>
+                );
 
-          {/* 9. FAQ Section */}
-          <HomeFaq />
+              case "top_rated":
+                return popularBonuses.length > 0 ? (
+                  <section key={sec.id} className="space-y-5">
+                    <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+                      <Flame className="h-5 w-5 text-rose-500" />
+                      <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
+                        {sec.title}
+                      </h2>
+                    </div>
+                    <CasinoCarousel casinos={popularBonuses} />
+                  </section>
+                ) : null;
 
+              case "sell_cta":
+                return <SellScreenshotCTA key={sec.id} config={sec} />;
+
+              case "faq":
+                return <HomeFaq key={sec.id} config={sec} />;
+
+              case "custom":
+                return (
+                  <section
+                    key={sec.id}
+                    className="rounded-3xl p-6 sm:p-10 border transition-all duration-300 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-6 text-left"
+                    style={{
+                      backgroundColor: sec.customBackgroundColor || "#ffffff",
+                      color: sec.customTextColor || "#0f172a",
+                      borderColor: "rgba(0,0,0,0.05)"
+                    }}
+                  >
+                    <div className="space-y-3 max-w-2xl text-left">
+                      <span className="text-[10px] uppercase font-black tracking-widest opacity-60 font-mono">
+                        Branded Spot
+                      </span>
+                      <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+                        {sec.title}
+                      </h2>
+                      {sec.subtitle && (
+                        <p className="text-xs font-semibold opacity-90 leading-relaxed">
+                          {sec.subtitle}
+                        </p>
+                      )}
+                      {sec.content && (
+                        <div className="text-xs opacity-80 leading-relaxed space-y-2 whitespace-pre-wrap">
+                          {sec.content}
+                        </div>
+                      )}
+                    </div>
+                    {sec.actionText && (
+                      <div className="shrink-0 text-left md:text-right">
+                        <a href={sec.actionUrl || "/#casinos"}>
+                          <button
+                            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-md transition cursor-pointer"
+                          >
+                            {sec.actionText}
+                          </button>
+                        </a>
+                      </div>
+                    )}
+                  </section>
+                );
+
+              default:
+                return null;
+            }
+          })}
         </div>
       )}
 
-      {/* 10. Footer */}
-      <HomeFooter />
+
     </div>
   );
 };

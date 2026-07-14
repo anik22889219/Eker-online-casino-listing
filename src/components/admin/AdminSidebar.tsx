@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Link2, Settings, Users, Image as ImageIcon, LogOut, ChevronLeft, ChevronRight, Building2, TrendingUp, Percent, ShieldCheck, LineChart, X, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Link2, Settings, Users, Image as ImageIcon, LogOut, ChevronLeft, ChevronRight, Building2, TrendingUp, Percent, ShieldCheck, LineChart, X, Sparkles, BookOpen, Mail, Palette } from 'lucide-react';
 
 interface AdminSidebarProps {
   currentTab: string;
@@ -24,10 +24,14 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
     { id: 'bonuses', label: 'Campaign Bonuses', icon: Percent },
     { id: 'review-submission', label: 'Review Submission', icon: ShieldCheck },
     { id: 'sell-requests', label: 'Sell Requests', icon: TrendingUp },
+    { id: 'blogs', label: 'Manage Blogs', icon: BookOpen },
+    { id: 'contact-desk', label: 'Contact Inbox', icon: Mail },
     { id: 'banners', label: 'Content Manager', icon: ImageIcon },
+    { id: 'theme-editor', label: 'Theme Editor', icon: Palette },
     { id: 'settings', label: 'Settings', icon: Settings },
     { id: 'users', label: 'User Manager', icon: Users },
   ];
+
 
   return (
     <>

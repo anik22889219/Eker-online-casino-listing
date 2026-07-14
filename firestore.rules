@@ -22,34 +22,27 @@ service cloud.firestore {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    // Role-Based Access Control Lookup
-    function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-
-    function hasUserDoc() {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
-    }
-
     function isSuperAdmin() {
       return isSignedIn() && (
         (request.auth.token != null && request.auth.token.email == 'aminulhoqueanik@gmail.com') ||
-        (hasUserDoc() && getUserData().role == 'super_admin')
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin')
       );
     }
 
-    // Admins and bootstrap admin bypass
     function isAdmin() {
       return isSignedIn() && (
         (request.auth.token != null && request.auth.token.email == 'aminulhoqueanik@gmail.com') ||
-        (hasUserDoc() && (getUserData().role == 'admin' || getUserData().role == 'super_admin'))
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin']))
       );
     }
 
     function isModerator() {
       return isSignedIn() && (
         (request.auth.token != null && request.auth.token.email == 'aminulhoqueanik@gmail.com') ||
-        (hasUserDoc() && (getUserData().role == 'moderator' || getUserData().role == 'admin' || getUserData().role == 'super_admin'))
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['moderator', 'admin', 'super_admin']))
       );
     }
 
@@ -91,7 +84,7 @@ service cloud.firestore {
     // 2. LEGACY AFFILIATE LINKS (BACKWARD COMPATIBLE)
     // =========================================================================
     match /affiliateLinks/{linkId} {
-      allow get, list: if true;
+      allow read: if true;
 
       allow create: if isSignedIn() && 
                     request.resource.data.userId == request.auth.uid && 
@@ -137,14 +130,10 @@ service cloud.firestore {
     // 3. CASINOS COLLECTION RULES
     // =========================================================================
     match /casinos/{casinoId} {
-      allow get: if isModerator();
-      allow get: if resource.data.status == 'published';
-      allow list: if isModerator();
-      allow list: if resource.data.status == 'published';
-
-      allow create: if isModerator() && isValidCasino(request.resource.data, true);
-      allow update: if isModerator() && isValidCasino(request.resource.data, false);
-      allow delete: if isSuperAdmin();
+      allow read: if true;
+      allow create: if isAdmin() && isValidCasino(request.resource.data, true);
+      allow update: if isAdmin() && isValidCasino(request.resource.data, false);
+      allow delete: if isAdmin();
     }
 
     function isValidCasino(data, isCreate) {
@@ -168,7 +157,7 @@ service cloud.firestore {
       (!('status' in data) || (data.status in ['draft', 'ai_generated', 'pending_review', 'published', 'archived'])) &&
       (!('aiGenerated' in data) || (data.aiGenerated is bool)) &&
       (!('featured' in data) || (data.featured is bool)) &&
-      (!('averageRating' in data) || (data.averageRating is number)) &&
+      (!('averageRating' in data) || (data.averageRating is int || data.averageRating is float)) &&
       (!('totalReviews' in data) || (data.totalReviews is int && data.totalReviews >= 0));
     }
 
@@ -202,7 +191,7 @@ service cloud.firestore {
       (!('casinoId' in data) || (data.casinoId is string && data.casinoId.size() <= 128)) &&
       (!('casinoName' in data) || (data.casinoName is string && data.casinoName.size() <= 256)) &&
       (!('userId' in data) || (data.userId is string && data.userId.size() <= 128)) &&
-      (!('rating' in data) || (data.rating is number && data.rating >= 1 && data.rating <= 5)) &&
+      (!('rating' in data) || ((data.rating is int || data.rating is float) && data.rating >= 1 && data.rating <= 5)) &&
       (!('title' in data) || (data.title is string && data.title.size() <= 128)) &&
       (!('comment' in data) || (data.comment is string && data.comment.size() <= 4096)) &&
       (!('approved' in data) || (data.approved is bool)) &&
@@ -233,7 +222,7 @@ service cloud.firestore {
              data.keys().size() == 5 &&
              data.casinoId is string && data.casinoId.size() <= 128 &&
              data.userId is string && data.userId.size() <= 128 &&
-             data.rating is number && data.rating >= 1 && data.rating <= 5;
+             (data.rating is int || data.rating is float) && data.rating >= 1 && data.rating <= 5;
     }
 
     // =========================================================================
@@ -242,8 +231,8 @@ service cloud.firestore {
     match /bonuses/{bonusId} {
       allow get, list: if true;
 
-      allow create, update: if isModerator() && isValidBonus(request.resource.data);
-      allow delete: if isModerator();
+      allow create, update: if isAdmin() && isValidBonus(request.resource.data);
+      allow delete: if isAdmin();
     }
 
     function isValidBonus(data) {
@@ -252,7 +241,7 @@ service cloud.firestore {
              data.title is string && data.title.size() <= 256 &&
              data.description is string && data.description.size() <= 2048 &&
              data.bonusType is string && data.bonusType.size() <= 128 &&
-             data.amount is number &&
+             (data.amount is int || data.amount is float) &&
              data.active is bool;
     }
 
@@ -262,8 +251,8 @@ service cloud.firestore {
     match /promoOffers/{offerId} {
       allow get, list: if true;
 
-      allow create, update: if isModerator() && isValidPromoOffer(request.resource.data);
-      allow delete: if isModerator();
+      allow create, update: if isAdmin() && isValidPromoOffer(request.resource.data);
+      allow delete: if isAdmin();
     }
 
     function isValidPromoOffer(data) {
@@ -297,7 +286,7 @@ service cloud.firestore {
       return data.keys().hasAll(['casinoId', 'image', 'amount', 'approved', 'uploadedBy', 'uploadedAt']) &&
              data.casinoId is string && data.casinoId.size() <= 128 &&
              data.image is string && data.image.size() <= 2048 &&
-             data.amount is number &&
+             (data.amount is int || data.amount is float) &&
              data.approved is bool &&
              data.uploadedBy is string && data.uploadedBy.size() <= 128;
     }
@@ -330,7 +319,7 @@ service cloud.firestore {
       (!('bikashNumber' in data) || (data.bikashNumber is string && data.bikashNumber.size() <= 64)) &&
       (!('dateTime' in data) || (data.dateTime is string && data.dateTime.size() <= 128)) &&
       (!('userId' in data) || (data.userId is string && data.userId.size() <= 128)) &&
-      (!('amount' in data) || (data.amount is number)) &&
+      (!('amount' in data) || (data.amount is int || data.amount is float)) &&
       (!('message' in data) || (data.message is string && data.message.size() <= 4096)) &&
       (!('status' in data) || (data.status in ['pending', 'approved', 'rejected']));
     }
@@ -363,9 +352,7 @@ service cloud.firestore {
     // 12. GLOBAL SETTINGS COLLECTION RULES
     // =========================================================================
     match /settings/{settingsId} {
-      allow get: if true; // Public system settings (maintenance flag, default categories, etc)
-      allow list: if isAdmin();
-
+      allow read: if true; // Public system settings (maintenance flag, default categories, etc)
       allow create, update: if isAdmin();
       allow delete: if isSuperAdmin();
     }
@@ -413,17 +400,32 @@ service cloud.firestore {
     // 15. MEDIA ASSETS COLLECTION RULES
     // =========================================================================
     match /mediaAssets/{assetId} {
-      allow get, list: if true;
-      allow create: if isSignedIn();
-      allow update, delete: if isModerator();
+      allow read, create: if isSignedIn();
+      allow update, delete: if isAdmin();
     }
 
     // =========================================================================
-    // 16. PROMO BANNERS COLLECTION RULES
+    // 16. BLOGS COLLECTION RULES
     // =========================================================================
-    match /banners/{bannerId} {
-      allow get, list: if true;
-      allow create, update, delete: if isModerator();
+    match /blogs/{blogId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // 17. CONTACT INFO CONFIG RULES
+    // =========================================================================
+    match /contactInfo/{infoId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // 18. CONTACT MESSAGES RULES
+    // =========================================================================
+    match /contactMessages/{messageId} {
+      allow create: if true;
+      allow read, update, delete: if isModerator();
     }
   }
 }

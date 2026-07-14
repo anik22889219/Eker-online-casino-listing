@@ -6,10 +6,11 @@ import {
   Navigate, 
   useSearchParams, 
   useNavigate, 
-  Link 
+  Link,
+  useLocation
 } from "react-router-dom";
 import { db, auth, handleFirestoreError, OperationType } from "./firebase";
-import { onAuthStateChanged, User, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { onAuthStateChanged, User, GoogleAuthProvider, signInWithPopup, signInAnonymously } from "firebase/auth";
 import {
   collection,
   onSnapshot,
@@ -53,7 +54,12 @@ import { JackpotListing } from "./components/JackpotListing";
 import BlogView from "./components/BlogView";
 import ContactView from "./components/ContactView";
 import UserProfileView from "./components/UserProfileView";
+import { TermsView } from "./components/TermsView";
+import { PrivacyView } from "./components/PrivacyView";
+import { ResponsibleGamingView } from "./components/ResponsibleGamingView";
 import { AdminSidebar } from "./components/admin/AdminSidebar";
+import { ThemeProvider, useTheme } from "./context/ThemeContext";
+import HomeFooter from "./components/home/HomeFooter";
 
 // Predefined demo fallbacks if DB has no links yet, keeping the site looking magnificent
 const DEMO_PRESETS = [
@@ -103,16 +109,31 @@ const DEMO_PRESETS = [
   },
 ];
 
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [pathname]);
+
+  return null;
+}
+
 // Router-connected wrapper
 export default function App() {
   return (
     <BrowserRouter>
-      <AppContent />
+      <ScrollToTop />
+      <ThemeProvider>
+        <AppContent />
+      </ThemeProvider>
     </BrowserRouter>
   );
 }
 
 function AppContent() {
+  const { theme } = useTheme();
+
   // Authentication & Directory Owners
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
@@ -131,6 +152,14 @@ function AppContent() {
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
   const [isSidebarOpenMobileGlobal, setIsSidebarOpenMobileGlobal] = useState(false);
 
+  // Age Verification & Google Login Prompt states
+  const [ageVerified, setAgeVerified] = useState<boolean | null>(() => {
+    const saved = localStorage.getItem("age_verified");
+    return saved === "true" ? true : null;
+  });
+  const [showAgeModal, setShowAgeModal] = useState<boolean>(false);
+  const [showLoginPrompt, setShowLoginPrompt] = useState<boolean>(false);
+
   useEffect(() => {
     const handleToggle = () => {
       setIsSidebarOpenMobileGlobal((prev) => !prev);
@@ -140,6 +169,48 @@ function AppContent() {
       window.removeEventListener("toggle-admin-sidebar", handleToggle);
     };
   }, []);
+
+  // Dynamic browser tab title and favicon updater based on active Theme settings
+  useEffect(() => {
+    if (!theme?.globalSettings) return;
+    
+    // Update Title
+    if (theme.globalSettings.logoText && !window.location.pathname.startsWith("/admin")) {
+      document.title = `${theme.globalSettings.logoText} | Verified Casino Broker & Jackpots`;
+    }
+
+    // Update Favicon
+    let faviconUrl = theme.globalSettings.faviconUrl;
+
+    if (!faviconUrl && theme.globalSettings.faviconText) {
+      // Generate a dynamic canvas-based emoji favicon!
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 32;
+        canvas.height = 32;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.font = "24px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(theme.globalSettings.faviconText.trim(), 16, 18);
+          faviconUrl = canvas.toDataURL("image/png");
+        }
+      } catch (e) {
+        console.warn("Could not generate emoji favicon:", e);
+      }
+    }
+
+    if (faviconUrl) {
+      let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
+      if (!link) {
+        link = document.createElement("link");
+        link.rel = "icon";
+        document.getElementsByTagName("head")[0].appendChild(link);
+      }
+      link.href = faviconUrl;
+    }
+  }, [theme?.globalSettings?.faviconUrl, theme?.globalSettings?.faviconText, theme?.globalSettings?.logoText]);
 
   const handleMarkNotificationAsRead = async (id: string) => {
     try {
@@ -184,6 +255,7 @@ function AppContent() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       if (user) {
+        setShowLoginPrompt(false);
         try {
           const profileRef = doc(db, "users", user.uid);
           const snap = await getDoc(profileRef);
@@ -230,31 +302,39 @@ function AppContent() {
     return unsubscribe;
   }, []);
 
-  // Auto Google Login trigger on website load
+  // Manage Age Verification state and modal display
   useEffect(() => {
-    const triggerAutoLogin = async () => {
-      // Small graceful delay to let resources load first
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      
-      const hasPrompted = sessionStorage.getItem("hasAutoPromptedGoogleLogin");
-      if (!auth.currentUser && !hasPrompted) {
-        sessionStorage.setItem("hasAutoPromptedGoogleLogin", "true");
-        try {
-          const provider = new GoogleAuthProvider();
-          provider.setCustomParameters({ prompt: "select_account" });
-          await signInWithPopup(auth, provider);
-        } catch (err: any) {
-          console.warn("Auto Google login popup dismissed or closed:", err);
-        }
-      }
-    };
-    
-    // Avoid triggering if we are already on the login page or admin tab to prevent UX disruption
     const path = window.location.pathname;
-    if (path === "/" || path === "") {
-      triggerAutoLogin();
+    if (ageVerified === null && path !== "/terms") {
+      setShowAgeModal(true);
+    } else {
+      setShowAgeModal(false);
+      // If verified and user is not logged in, show the top-right prompt after 3.5 seconds
+      if (ageVerified && !auth.currentUser && path !== "/terms" && path !== "/login" && !path.startsWith("/admin")) {
+        const timer = setTimeout(() => {
+          setShowLoginPrompt(true);
+        }, 3500);
+        return () => clearTimeout(timer);
+      }
     }
-  }, []);
+  }, [ageVerified, window.location.pathname]);
+
+  const handleVerifyAge = () => {
+    localStorage.setItem("age_verified", "true");
+    setAgeVerified(true);
+    setShowAgeModal(false);
+    // Show login prompt shortly after verifying
+    setTimeout(() => {
+      if (!auth.currentUser) {
+        setShowLoginPrompt(true);
+      }
+    }, 1500);
+  };
+
+  const handleDeclineAge = () => {
+    setShowAgeModal(false);
+    navigate("/terms");
+  };
 
   // 3. Fetch Selected URL Creator Profile
   useEffect(() => {
@@ -457,33 +537,97 @@ function AppContent() {
     const innerLayout = (
       <>
         {!hideHeader && (
-          <header className="sticky top-0 z-40 bg-white/75 backdrop-blur-xl border-b border-slate-200/50 shrink-0 transition-all duration-300">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200/50 shrink-0 transition-all duration-300 shadow-xs">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between relative">
               <div className="flex items-center gap-2">
                 {/* Hamburger menu for Admin Sidebar on Mobile */}
                 {currentUser && isAdmin && (
                   <button
                     onClick={() => window.dispatchEvent(new Event('toggle-admin-sidebar'))}
-                    className="md:hidden p-2 -ml-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 rounded-xl transition cursor-pointer"
+                    className="md:hidden p-2 -ml-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 rounded-xl transition cursor-pointer z-50"
                     aria-label="Open Admin Menu"
                   >
                     <Menu className="w-5 h-5" />
                   </button>
                 )}
 
-                <Link to="/" className="flex items-center gap-3 group">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br from-indigo-500 to-indigo-700 text-white shadow-sm transition-transform duration-300 group-hover:scale-105 group-hover:rotate-3">
-                    <Coins className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <span className="font-display font-extrabold text-base tracking-tight text-slate-900 leading-none block">
-                      Eker Listings
-                    </span>
-                    <span className="text-[9px] font-mono font-bold uppercase tracking-widest text-indigo-600 block mt-1">
-                      {window.location.pathname.startsWith("/admin") ? "Admin Workspace" : "Verified Casino Broker"}
-                    </span>
-                  </div>
+                {/* Desktop-only logo wrapper */}
+                <div className="hidden md:block">
+                  <Link to="/" className="flex items-center gap-3 group">
+                    {theme.globalSettings.logoUrl ? (
+                      <img
+                        src={theme.globalSettings.logoUrl}
+                        alt={theme.globalSettings.logoText || "Logo"}
+                        className="h-14 md:h-16 w-auto max-w-[240px] md:max-w-[280px] object-contain transition-transform duration-300 group-hover:scale-105"
+                        referrerPolicy="no-referrer"
+                      />
+                  ) : (
+                    <>
+                      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-linear-to-br from-indigo-500 to-indigo-700 text-white shadow-sm transition-transform duration-300 group-hover:scale-105 group-hover:rotate-3 text-lg font-bold font-mono overflow-hidden">
+                        {theme.globalSettings.faviconUrl ? (
+                          <img
+                            src={theme.globalSettings.faviconUrl}
+                            alt="Favicon"
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : theme.globalSettings.faviconText ? (
+                          theme.globalSettings.faviconText.trim()
+                        ) : (
+                          <Coins className="h-6 w-6" />
+                        )}
+                      </div>
+                      <div>
+                        <span className="font-display font-extrabold text-base tracking-tight text-slate-900 leading-none block">
+                          {theme.globalSettings.logoText || "Eker Listings"}
+                        </span>
+                        <span className="text-[9px] font-mono font-bold uppercase tracking-widest text-indigo-600 block mt-1">
+                          {window.location.pathname.startsWith("/admin") ? "Admin Workspace" : "Verified Casino Broker"}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </Link>
+              </div>
+
+              {/* Mobile Centered Logo (Absolute Centered, Larger & Highly Professional) */}
+              <div className="md:hidden absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center">
+                <Link to="/" className="flex items-center gap-2 group">
+                  {theme.globalSettings.logoUrl ? (
+                    <img
+                      src={theme.globalSettings.logoUrl}
+                      alt={theme.globalSettings.logoText || "Logo"}
+                      className="h-14 sm:h-16 w-auto max-w-[240px] object-contain transition-transform duration-300 active:scale-105"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <>
+                      <div className="flex h-13 w-13 sm:h-15 sm:w-15 items-center justify-center rounded-xl bg-linear-to-br from-indigo-500 to-indigo-700 text-white shadow-xs transition-transform duration-300 text-xl font-bold font-mono overflow-hidden">
+                        {theme.globalSettings.faviconUrl ? (
+                          <img
+                            src={theme.globalSettings.faviconUrl}
+                            alt="Favicon"
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : theme.globalSettings.faviconText ? (
+                          theme.globalSettings.faviconText.trim()
+                        ) : (
+                          <Coins className="h-6 w-6" />
+                        )}
+                      </div>
+                      <div className="text-left">
+                        <span className="font-display font-black text-sm sm:text-base tracking-tight text-slate-900 leading-none block">
+                          {theme.globalSettings.logoText || "Eker Listings"}
+                        </span>
+                        <span className="text-[8px] sm:text-[9px] font-mono font-extrabold uppercase tracking-widest text-indigo-600 block mt-0.5 leading-none">
+                          Verified
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </Link>
+              </div>
 
                 {/* Show the active admin page tab title on desktop next to logo */}
                 {window.location.pathname.startsWith("/admin") && (
@@ -521,14 +665,14 @@ function AppContent() {
                   {/* Conditions based on user role and authentication status */}
                   {currentUser && isAdmin ? (
                     <Link
-                      to="/admin"
+                      to="/admin?tab=creator"
                       className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
                         window.location.pathname.startsWith("/admin")
                           ? "text-indigo-600 bg-indigo-50/50"
                           : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"
                       }`}
                     >
-                      Creator Portal
+                      Creator
                     </Link>
                   ) : (
                     <>
@@ -669,16 +813,75 @@ function AppContent() {
                         provider.setCustomParameters({ prompt: "select_account" });
                         await signInWithPopup(auth, provider);
                       } catch (err) {
-                        console.error("Manual Google login failed:", err);
+                        console.warn("Google popup login failed, trying anonymous fallback:", err);
+                        try {
+                          await signInAnonymously(auth);
+                        } catch (anonErr) {
+                          console.error("Anonymous login fallback failed:", anonErr);
+                        }
                       }
                     }}
-                    className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-3.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-97 shrink-0"
+                    className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white py-1.5 px-2.5 sm:py-2 sm:px-3.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-97 shrink-0"
                   >
-                    <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24">
+                    <svg className="h-3 w-3 sm:h-3.5 sm:w-3.5 fill-current" viewBox="0 0 24 24">
                       <path d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.113-5.111 4.113-3.414 0-6.173-2.76-6.173-6.173s2.76-6.173 6.173-6.173c1.55 0 2.964.57 4.053 1.503l3.05-3.048C19.317 2.115 16.035 1 12.24 1s-8.1 4.385-8.1 9.285 4.385 9.285 8.1 9.285c7.34 0 8.16-5.83 8.16-8.285h-8.16z"/>
                     </svg>
-                    <span>Login with Google</span>
+                    <span className="hidden xs:inline">Login with Google</span>
+                    <span className="xs:hidden">Login</span>
                   </button>
+                )}
+
+                {/* Elegant floating Google sign-in helper prompt */}
+                {!currentUser && showLoginPrompt && (
+                  <div className="absolute right-4 top-16 w-72 md:w-80 bg-white border border-slate-150 rounded-2xl shadow-xl z-50 p-4 text-left animate-in fade-in slide-in-from-top-4 duration-300">
+                    <div className="absolute -top-1.5 right-12 w-3 h-3 bg-white border-t border-l border-slate-150 rotate-45" />
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100/50">
+                        <Sparkles className="h-5 w-5 animate-pulse text-indigo-500" />
+                      </div>
+                      <div className="flex-1 space-y-0.5">
+                        <h4 className="text-xs font-black text-slate-900 tracking-tight">Unlock High-Roller Rewards! 👋</h4>
+                        <p className="text-[10px] sm:text-[11px] text-slate-500 leading-normal font-medium">
+                          Continue with Google to claim exclusive casino welcome rewards, custom multipliers, and tracking analytics.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setShowLoginPrompt(false)}
+                        className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-50 transition cursor-pointer shrink-0"
+                        aria-label="Dismiss login prompt"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2">
+                      <button
+                        onClick={async () => {
+                          setShowLoginPrompt(false);
+                          try {
+                            const provider = new GoogleAuthProvider();
+                            provider.setCustomParameters({ prompt: "select_account" });
+                            await signInWithPopup(auth, provider);
+                          } catch (err) {
+                            console.warn("Google popup login failed:", err);
+                          }
+                        }}
+                        className="flex-1 flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white py-1.5 px-3 rounded-xl text-[11px] font-bold transition-all shadow-xs cursor-pointer active:scale-97"
+                      >
+                        <svg className="h-3 w-3 fill-current" viewBox="0 0 24 24">
+                          <path d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.113-5.111 4.113-3.414 0-6.173-2.76-6.173-6.173s2.76-6.173 6.173-6.173c1.55 0 2.964.57 4.053 1.503l3.05-3.048C19.317 2.115 16.035 1 12.24 1s-8.1 4.385-8.1 9.285 4.385 9.285 8.1 9.285c7.34 0 8.16-5.83 8.16-8.285h-8.16z"/>
+                        </svg>
+                        <span>Continue with Google</span>
+                      </button>
+                      <button
+                        onClick={() => setShowLoginPrompt(false)}
+                        className="px-2.5 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-500 rounded-xl text-[10px] font-bold transition-all cursor-pointer"
+                      >
+                        Maybe Later
+                      </button>
+                    </div>
+                  </div>
                 )}
 
 
@@ -687,45 +890,26 @@ function AppContent() {
           </header>
         )}
 
-        <main className={isFullWidth ? "flex-1 w-full flex overflow-hidden bg-slate-50" : "flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 md:pb-8"}>
+        <main className={isFullWidth ? "flex-1 w-full flex overflow-hidden bg-slate-50" : "flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-2 sm:pt-4 pb-24 md:pb-8"}>
           {content}
         </main>
 
         {!hideFooter && (
-          <footer className="border-t border-slate-100 bg-white/60 py-6 mt-12 text-center text-xs text-slate-400 font-sans space-y-4">
-            <div className="flex items-center justify-center gap-1">
-              <Heart className="h-3.5 w-3.5 text-rose-500 fill-rose-500" />
-              <span>Powered securely with RefDirect Cloud-run Broker</span>
-            </div>
-
-            {/* Direct quick footer links including Administration Login */}
-            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px] font-bold text-slate-400">
-              <Link to="/admin" className="hover:text-indigo-600 transition-colors">
-                Administration Login
-              </Link>
-              <span className="text-slate-200">|</span>
-              <Link to="/blog" className="hover:text-indigo-600 transition-colors">
-                Chronicle Blog
-              </Link>
-              <span className="text-slate-200">|</span>
-              <Link to="/contact" className="hover:text-indigo-600 transition-colors">
-                Support Desk
-              </Link>
-            </div>
-
+          <>
             {!urlCreatorId && currentUserProfile && (
-              <div className="max-w-md mx-auto bg-slate-50 border border-slate-100 p-2.5 rounded-2xl flex items-center justify-between text-[11px] font-medium text-slate-500 gap-2">
+              <div className="max-w-md mx-auto mb-6 bg-white border border-slate-200 p-2.5 rounded-2xl flex items-center justify-between text-[11px] font-medium text-slate-500 gap-2 shadow-xs">
                 <span>Visit your personal branded URL:</span>
                 <Link
                   to={`/?u=${currentUserProfile.uid}`}
-                  className="text-indigo-600 hover:underline font-bold bg-white px-2.5 py-1 rounded-lg border border-slate-100 flex items-center gap-1"
+                  className="text-indigo-600 hover:underline font-bold bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 flex items-center gap-1 hover:bg-slate-100 transition-colors"
                 >
                   <span>Branded Space</span>
                   <ExternalLink className="h-3.5 w-3.5" />
                 </Link>
               </div>
             )}
-          </footer>
+            <HomeFooter />
+          </>
         )}
 
         <DealModal deal={selectedDeal} onClose={() => setSelectedDeal(null)} onGoToLink={handleGoToLink} />
@@ -755,7 +939,7 @@ function AppContent() {
 
             {currentUser && isAdmin ? (
               <Link
-                to="/admin"
+                to="/admin?tab=creator"
                 className={`flex flex-col items-center justify-center gap-1 text-[10px] font-bold ${
                   window.location.pathname.startsWith('/admin') ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-700'
                 } transition-colors`}
@@ -817,40 +1001,60 @@ function AppContent() {
   };
 
   return (
+    <>
     <Routes>
       {/* 1. HOME CATALOG PATH */}
       <Route path="/" element={renderLayout(
         <HomeView />,
         false,
-        true
+        false
       )} />
 
       {/* Jackpot Listing Submission Form */}
       <Route path="/jackpot-listing" element={renderLayout(
         <JackpotListing />,
         false,
-        true
+        false
       )} />
 
       {/* 2. DETAILED LANDING OVERVIEW PAGE */}
       <Route path="/casino/:slug" element={renderLayout(
         <CasinoDetails deals={allDeals} onGoToLink={handleGoToLink} />,
         false,
-        true
+        false
       )} />
 
       {/* Blog view */}
       <Route path="/blog" element={renderLayout(
         <BlogView />,
         false,
-        true
+        false
+      )} />
+
+      {/* Terms, Privacy, and Responsible Gaming views */}
+      <Route path="/terms" element={renderLayout(
+        <TermsView />,
+        false,
+        false
+      )} />
+
+      <Route path="/privacy" element={renderLayout(
+        <PrivacyView />,
+        false,
+        false
+      )} />
+
+      <Route path="/responsible-gaming" element={renderLayout(
+        <ResponsibleGamingView />,
+        false,
+        false
       )} />
 
       {/* Contact view */}
       <Route path="/contact" element={renderLayout(
         <ContactView />,
         false,
-        true
+        false
       )} />
 
       {/* Normal authenticated user Profile view */}
@@ -862,7 +1066,7 @@ function AppContent() {
               userProfile={currentUserProfile}
             />,
             false,
-            true
+            false
           )
         ) : (
           <Navigate to="/login" replace />
@@ -936,5 +1140,58 @@ function AppContent() {
         </div>
       )} />
     </Routes>
+
+    {/* 18+ Age Verification Modal */}
+    {showAgeModal && (
+      <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 font-sans">
+        <div className="bg-white rounded-3xl max-w-md w-full p-6 md:p-8 shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-300 text-center space-y-6 relative overflow-hidden">
+          {/* Ambient decorative background circles */}
+          <div className="absolute -top-10 -right-10 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+          <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-rose-500/10 rounded-full blur-2xl pointer-events-none" />
+
+          {/* Shield 18+ Warning Badge */}
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-rose-50 text-rose-600 border border-rose-100 shadow-xs relative">
+            <ShieldCheck className="h-8 w-8" />
+            <span className="absolute -top-1 -right-1 bg-rose-500 text-white font-mono font-black text-[10px] px-1.5 py-0.5 rounded-full leading-none ring-2 ring-white">
+              18+
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            <h2 className="font-display font-black text-xl md:text-2xl text-slate-900 tracking-tight leading-tight">
+              Age Verification Required
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500 leading-relaxed font-medium">
+              You must be <span className="font-bold text-slate-800">18 years of age or older</span> to enter {theme.globalSettings.logoText || "Eker Listings"}. We promote safe, responsible gaming compliance.
+            </p>
+          </div>
+
+          <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 flex items-center gap-3 text-left">
+            <span className="text-xl">🔞</span>
+            <p className="text-[10px] sm:text-xs text-slate-500 leading-tight">
+              By entering this site, you certify that you are of legal age in your jurisdiction and agree to our Terms of Service.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
+            <button
+              onClick={handleVerifyAge}
+              className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-md active:scale-97 cursor-pointer hover:shadow-lg hover:shadow-indigo-500/10"
+            >
+              Yes, I am 18 or older
+            </button>
+            <button
+              onClick={handleDeclineAge}
+              className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all active:scale-97 cursor-pointer border border-slate-200/50"
+            >
+              No, I am under 18
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
   );
 }
+
+

@@ -29,7 +29,14 @@ const FAQ_ITEMS: FaqItem[] = [
   },
 ];
 
-export const HomeFaq: React.FC = () => {
+interface HomeFaqProps {
+  config?: {
+    title?: string;
+    subtitle?: string;
+  };
+}
+
+export const HomeFaq: React.FC<HomeFaqProps> = ({ config }) => {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   const toggleAccordion = (index: number) => {
@@ -41,10 +48,10 @@ export const HomeFaq: React.FC = () => {
       <div className="border-b border-slate-100 pb-3">
         <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
           <HelpCircle className="h-5.5 w-5.5 text-indigo-600" />
-          Frequently Asked Questions
+          {config?.title || "Frequently Asked Questions"}
         </h2>
         <p className="text-xs text-slate-500 font-medium">
-          Get transparent answers about casino licensing, welcome rewards, and how we validate listings.
+          {config?.subtitle || "Get transparent answers about casino licensing, welcome rewards, and how we validate listings."}
         </p>
       </div>
 

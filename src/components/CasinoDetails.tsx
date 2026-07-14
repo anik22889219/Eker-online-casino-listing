@@ -557,11 +557,23 @@ export const CasinoDetails: React.FC<CasinoDetailsProps> = ({ deals = [], onGoTo
         <div className="relative z-10 p-6 sm:p-8 flex flex-col md:flex-row md:items-end justify-between gap-6 pt-24">
           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
             <div className="h-20 w-20 rounded-2xl bg-white p-2 border border-slate-100 shadow-lg overflow-hidden shrink-0 flex items-center justify-center">
-              {casino.casinoLogo ? (
-                <img src={casino.casinoLogo} alt="" className="h-full w-full object-contain" referrerPolicy="no-referrer" />
-              ) : (
-                <span className="font-black text-2xl text-slate-800">{casino.casinoName.substring(0, 2)}</span>
-              )}
+              {(() => {
+                let resolvedLogo = casino.casinoLogo;
+                if (casino.casinoName) {
+                  const nameLower = casino.casinoName.toLowerCase();
+                  const linkLower = (casino.affiliateLink || "").toLowerCase();
+                  if (nameLower.includes("tk10") || linkLower.includes("tk10")) {
+                    resolvedLogo = "/tk10_logo.jpg";
+                  } else if (nameLower.includes("qq777") || linkLower.includes("qq777")) {
+                    resolvedLogo = "/qq777_logo.jpg";
+                  }
+                }
+                return resolvedLogo ? (
+                  <img src={resolvedLogo} alt="" className="h-full w-full object-contain" referrerPolicy="no-referrer" />
+                ) : (
+                  <span className="font-black text-2xl text-slate-800">{casino.casinoName.substring(0, 2)}</span>
+                );
+              })()}
             </div>
 
             <div className="space-y-1.5">
