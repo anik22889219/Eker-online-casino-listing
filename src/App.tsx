@@ -60,6 +60,7 @@ import { ResponsibleGamingView } from "./components/ResponsibleGamingView";
 import { AdminSidebar } from "./components/admin/AdminSidebar";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import HomeFooter from "./components/home/HomeFooter";
+import PwaInstallPrompt from "./components/PwaInstallPrompt";
 
 // Predefined demo fallbacks if DB has no links yet, keeping the site looking magnificent
 const DEMO_PRESETS = [
@@ -1140,6 +1141,9 @@ function AppContent() {
         </div>
       )} />
     </Routes>
+
+    {/* PWA Install Prompt for Android/Desktop */}
+    <PwaInstallPrompt />
 
     {/* 18+ Age Verification Modal */}
     {showAgeModal && (

@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Heart } from "lucide-react";
+import { Heart, Smartphone, Download } from "lucide-react";
 import { useTheme } from "../../context/ThemeContext";
 
 export const HomeFooter: React.FC = () => {
@@ -106,6 +106,36 @@ export const HomeFooter: React.FC = () => {
             </ul>
           </div>
 
+        </div>
+
+        {/* Download App CTA Banner */}
+        <div className="bg-gradient-to-r from-indigo-50 via-slate-50 to-indigo-50 border border-indigo-100 rounded-2xl p-4 sm:p-5 mb-8 text-left flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="h-11 w-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md">
+              <Smartphone className="h-5 w-5 animate-pulse" />
+            </div>
+            <div>
+              <h4 className="text-xs sm:text-sm font-black text-slate-900 tracking-tight flex items-center gap-1.5">
+                RefDirect অ্যান্ড্রয়েড অ্যাপ ইনস্টল করুন 📱
+              </h4>
+              <p className="text-[11px] sm:text-xs text-slate-600 font-medium leading-relaxed mt-0.5">
+                আপনার অ্যান্ড্রয়েড স্ক্রিনে সরাসরি অ্যাপের মতো দ্রুত লোড পেতে এবং ব্রাউজার ছাড়াই সরাসরি ব্যবহার করতে ইনস্টল করুন।
+              </p>
+            </div>
+          </div>
+          <button 
+            onClick={() => {
+              if ((window as any).triggerPwaInstall) {
+                (window as any).triggerPwaInstall();
+              } else {
+                alert("আপনার ব্রাউজারে ইনস্টল ফিচারটি এই মুহূর্তে প্রস্তুত নয়। অনুগ্রহ করে ক্রোম/ডিফল্ট ব্রাউজার ব্যবহার করুন অথবা ব্রাউজার মেনু থেকে 'Add to Home Screen' চাপুন।");
+              }
+            }}
+            className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 px-5 rounded-xl shadow-md hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer w-full md:w-auto shrink-0"
+          >
+            <Download className="w-4 h-4" />
+            <span>ইনস্টল করুন / Install App</span>
+          </button>
         </div>
 
         {/* Disclaimer Warning */}

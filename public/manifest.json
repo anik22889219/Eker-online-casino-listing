@@ -1,0 +1,37 @@
+{
+  "name": "RefDirect - Affiliate & Referral Link Directory",
+  "short_name": "RefDirect",
+  "description": "An elegant directory for verified affiliate links, custom multipliers, and high-roller rewards.",
+  "start_url": "/?utm_source=pwa",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "/qq777_logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/tk10_logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Deals Directory",
+      "short_name": "Deals",
+      "url": "/",
+      "description": "Browse active verified deals"
+    },
+    {
+      "name": "Blog & Updates",
+      "short_name": "Blog",
+      "url": "/blog"
+    }
+  ]
+}
