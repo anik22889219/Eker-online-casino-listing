@@ -1,0 +1,536 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net - Default Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // GLOBAL HELPERS
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        (request.auth.token != null && request.auth.token.email == 'aminulhoqueanik@gmail.com') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin')
+      );
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (request.auth.token != null && request.auth.token.email == 'aminulhoqueanik@gmail.com') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin']))
+      );
+    }
+
+    function isModerator() {
+      return isSignedIn() && (
+        (request.auth.token != null && request.auth.token.email == 'aminulhoqueanik@gmail.com') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['moderator', 'admin', 'super_admin']))
+      );
+    }
+
+    // =========================================================================
+    // 1. USERS COLLECTION RULES
+    // =========================================================================
+    match /users/{userId} {
+      allow get: if true; // Public directories & info are readable
+      allow list: if isAdmin(); // Only admins can list all users
+
+      allow create: if isOwner(userId) && 
+                    isValidUserProfile(request.resource.data, true) &&
+                    (request.resource.data.role == 'user' || (request.resource.data.role == 'admin' && request.auth.token != null && request.auth.token.email == 'aminulhoqueanik@gmail.com')); // Users cannot self-escalate on creation except bootstrap admin
+
+      allow update: if (isOwner(userId) && 
+                    isValidUserProfile(request.resource.data, false) &&
+                    (request.resource.data.role == resource.data.role || (request.auth.token != null && request.auth.token.email == 'aminulhoqueanik@gmail.com')) && // Prevent role self-escalation unless bootstrap
+                    request.resource.data.status == resource.data.status && // Prevent status self-reactivation
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'bio', 'photoURL', 'updatedAt', 'walletType', 'walletNumber', 'bkashNumber', 'walletAccountType'])) ||
+                    isAdmin(); // Admins can change everything (roles, status)
+
+      allow delete: if isSuperAdmin();
+    }
+
+    function isValidUserProfile(data, isCreate) {
+      return (!isCreate || (
+        data.keys().hasAll(['email', 'displayName', 'role', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().size() >= 6 && data.keys().size() <= 12
+      )) &&
+      (!('email' in data) || (data.email is string && data.email.size() <= 256)) &&
+      (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 128)) &&
+      (!('role' in data) || (data.role in ['super_admin', 'admin', 'moderator', 'user'])) &&
+      (!('status' in data) || (data.status in ['active', 'suspended', 'pending'])) &&
+      (!('bio' in data) || (data.bio is string && data.bio.size() <= 2048)) &&
+      (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 2048)) &&
+      (!('walletType' in data) || (data.walletType is string && data.walletType.size() <= 64)) &&
+      (!('walletNumber' in data) || (data.walletNumber is string && data.walletNumber.size() <= 64)) &&
+      (!('bkashNumber' in data) || (data.bkashNumber is string && data.bkashNumber.size() <= 64)) &&
+      (!('walletAccountType' in data) || (data.walletAccountType is string && data.walletAccountType.size() <= 64));
+    }
+
+    // =========================================================================
+    // 2. LEGACY AFFILIATE LINKS (BACKWARD COMPATIBLE)
+    // =========================================================================
+    match /affiliateLinks/{linkId} {
+      allow read: if true;
+
+      allow create: if isSignedIn() && 
+                    request.resource.data.userId == request.auth.uid && 
+                    isValidAffiliateLink(request.resource.data, true);
+
+      allow update: if (
+        // Action 1: Public Click Increment
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clicks']) &&
+         request.resource.data.clicks == resource.data.clicks + 1)
+      ) || (
+        // Action 2: Owner or Admin Edit
+        (isOwner(resource.data.userId) || isAdmin()) &&
+        request.resource.data.userId == resource.data.userId &&
+        isValidAffiliateLink(request.resource.data, false) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'title', 'originalUrl', 'description', 'category', 'discountCode', 
+          'rewardText', 'ownerRewardText', 'slug', 'isArchived', 'clicks'
+        ])
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    function isValidAffiliateLink(data, isCreate) {
+      return (!isCreate || (
+        data.keys().hasAll(['userId', 'title', 'originalUrl', 'clicks', 'createdAt', 'isArchived']) &&
+        data.keys().size() >= 6 && data.keys().size() <= 12
+      )) &&
+      (!('userId' in data) || (data.userId is string && data.userId.size() <= 128)) &&
+      (!('title' in data) || (data.title is string && data.title.size() <= 128)) &&
+      (!('originalUrl' in data) || (data.originalUrl is string && data.originalUrl.size() <= 2048)) &&
+      (!('description' in data) || (data.description is string && data.description.size() <= 2048)) &&
+      (!('category' in data) || (data.category is string && data.category.size() <= 128)) &&
+      (!('discountCode' in data) || (data.discountCode is string && data.discountCode.size() <= 128)) &&
+      (!('rewardText' in data) || (data.rewardText is string && data.rewardText.size() <= 512)) &&
+      (!('ownerRewardText' in data) || (data.ownerRewardText is string && data.ownerRewardText.size() <= 512)) &&
+      (!('clicks' in data) || (data.clicks is int && data.clicks >= 0)) &&
+      (!('slug' in data) || (data.slug is string && data.slug.size() <= 128)) &&
+      (!('isArchived' in data) || (data.isArchived is bool));
+    }
+
+    // =========================================================================
+    // 3. CASINOS COLLECTION RULES
+    // =========================================================================
+    match /casinos/{casinoId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidCasino(request.resource.data, true);
+      allow update: if isAdmin() && isValidCasino(request.resource.data, false);
+      allow delete: if isAdmin();
+    }
+
+    function isValidCasino(data, isCreate) {
+      return (!isCreate || (
+        data.keys().hasAll(['slug', 'affiliateLink', 'casinoName', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().size() >= 6
+      )) &&
+      (!('slug' in data) || (data.slug is string && data.slug.size() <= 128)) &&
+      (!('affiliateLink' in data) || (data.affiliateLink is string && data.affiliateLink.size() <= 2048)) &&
+      (!('casinoName' in data) || (data.casinoName is string && data.casinoName.size() <= 256)) &&
+      (!('casinoLogo' in data) || (data.casinoLogo is string && data.casinoLogo.size() <= 5000000)) &&
+      (!('bannerImage' in data) || (data.bannerImage is string && data.bannerImage.size() <= 5000000)) &&
+      (!('shortDescription' in data) || (data.shortDescription is string && data.shortDescription.size() <= 1024)) &&
+      (!('landingContent' in data) || (data.landingContent is string && data.landingContent.size() <= 10000)) &&
+      (!('manualReview' in data) || (data.manualReview is string && data.manualReview.size() <= 10000)) &&
+      (!('welcomeBonus' in data) || (data.welcomeBonus is string && data.welcomeBonus.size() <= 512)) &&
+      (!('category' in data) || (data.category is string && data.category.size() <= 128)) &&
+      (!('country' in data) || (data.country is string && data.country.size() <= 128)) &&
+      (!('seoTitle' in data) || (data.seoTitle is string && data.seoTitle.size() <= 256)) &&
+      (!('metaDescription' in data) || (data.metaDescription is string && data.metaDescription.size() <= 512)) &&
+      (!('status' in data) || (data.status in ['draft', 'ai_generated', 'pending_review', 'published', 'archived'])) &&
+      (!('aiGenerated' in data) || (data.aiGenerated is bool)) &&
+      (!('featured' in data) || (data.featured is bool)) &&
+      (!('averageRating' in data) || (data.averageRating is int || data.averageRating is float)) &&
+      (!('totalReviews' in data) || (data.totalReviews is int && data.totalReviews >= 0));
+    }
+
+    // =========================================================================
+    // 4. REVIEWS COLLECTION RULES
+    // =========================================================================
+    match /reviews/{reviewId} {
+      allow get, list: if true;
+
+      allow create: if isValidReview(request.resource.data, true);
+
+      allow update: if (isOwner(resource.data.userId) || isModerator() || isAdmin()) &&
+                    isValidReview(request.resource.data, false);
+
+      allow delete: if isOwner(resource.data.userId) || isModerator() || isAdmin();
+    }
+
+    match /game_reviews/{reviewId} {
+      allow read, list: if true;
+      allow create: if isValidGameReview(request.resource.data, true);
+      allow update, delete: if isModerator() || isAdmin();
+    }
+
+    function isValidReview(data, isCreate) {
+      return (!isCreate || (
+        data.keys().hasAll(['casinoId', 'userId', 'rating', 'title', 'comment', 'approved', 'createdAt']) &&
+        data.keys().size() >= 7 && data.keys().size() <= 20
+      )) &&
+      (!('casinoId' in data) || (data.casinoId is string && data.casinoId.size() <= 128)) &&
+      (!('casinoName' in data) || (data.casinoName is string && data.casinoName.size() <= 256)) &&
+      (!('userId' in data) || (data.userId is string && data.userId.size() <= 128)) &&
+      (!('userName' in data) || (data.userName is string && data.userName.size() <= 256)) &&
+      (!('email' in data) || (data.email is string && data.email.size() <= 256)) &&
+      (!('gameName' in data) || (data.gameName is string && data.gameName.size() <= 256)) &&
+      (!('amount' in data) || (data.amount is int || data.amount is float)) &&
+      (!('multiplier' in data) || (data.multiplier is string && data.multiplier.size() <= 128)) &&
+      (!('rating' in data) || ((data.rating is int || data.rating is float) && data.rating >= 1 && data.rating <= 5)) &&
+      (!('title' in data) || (data.title is string && data.title.size() <= 256)) &&
+      (!('comment' in data) || (data.comment is string && data.comment.size() <= 10000)) &&
+      (!('approved' in data) || (data.approved is bool)) &&
+      (!('jackpotScreenshot' in data) || (data.jackpotScreenshot is string && data.jackpotScreenshot.size() <= 5000000)) &&
+      (!('balanceScreenshot' in data) || (data.balanceScreenshot is string && data.balanceScreenshot.size() <= 5000000)) &&
+      (!('screenshotUrl' in data) || (data.screenshotUrl is string && data.screenshotUrl.size() <= 5000000)) &&
+      (!('image' in data) || (data.image is string && data.image.size() <= 5000000)) &&
+      (!('status' in data) || (data.status is string && data.status.size() <= 64)) &&
+      (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 128)) &&
+      (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 128));
+    }
+
+    function isValidGameReview(data, isCreate) {
+      return (!isCreate || (
+        data.keys().hasAll(['gameId', 'gameName', 'userName', 'rating', 'comment', 'createdAt']) &&
+        data.keys().size() >= 6 && data.keys().size() <= 8
+      )) &&
+      (!('gameId' in data) || (data.gameId is string && data.gameId.size() <= 128)) &&
+      (!('gameName' in data) || (data.gameName is string && data.gameName.size() <= 256)) &&
+      (!('userName' in data) || (data.userName is string && data.userName.size() <= 128)) &&
+      (!('rating' in data) || ((data.rating is int || data.rating is float) && data.rating >= 1 && data.rating <= 5)) &&
+      (!('comment' in data) || (data.comment is string && data.comment.size() <= 4096));
+    }
+
+    // =========================================================================
+    // 5. RATINGS COLLECTION RULES
+    // =========================================================================
+    match /ratings/{ratingId} {
+      allow get: if true;
+      allow list: if true;
+
+      allow create: if isSignedIn() && 
+                    request.resource.data.userId == request.auth.uid && 
+                    isValidRating(request.resource.data);
+                    
+      allow update: if isOwner(resource.data.userId) && 
+                    request.resource.data.userId == resource.data.userId &&
+                    isValidRating(request.resource.data);
+
+      allow delete: if isOwner(resource.data.userId) || isModerator();
+    }
+
+    function isValidRating(data) {
+      return data.keys().hasAll(['casinoId', 'userId', 'rating', 'createdAt', 'updatedAt']) &&
+             data.keys().size() == 5 &&
+             data.casinoId is string && data.casinoId.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             (data.rating is int || data.rating is float) && data.rating >= 1 && data.rating <= 5;
+    }
+
+    // =========================================================================
+    // 6. BONUSES COLLECTION RULES
+    // =========================================================================
+    match /bonuses/{bonusId} {
+      allow get, list: if true;
+
+      allow create, update: if isAdmin() && isValidBonus(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    function isValidBonus(data) {
+      return data.keys().hasAll(['casinoId', 'title', 'description', 'bonusType', 'amount', 'active']) &&
+             data.casinoId is string && data.casinoId.size() <= 128 &&
+             data.title is string && data.title.size() <= 256 &&
+             data.description is string && data.description.size() <= 2048 &&
+             data.bonusType is string && data.bonusType.size() <= 128 &&
+             (data.amount is int || data.amount is float) &&
+             data.active is bool;
+    }
+
+    // =========================================================================
+    // 7. PROMO OFFERS COLLECTION RULES
+    // =========================================================================
+    match /promoOffers/{offerId} {
+      allow get, list: if true;
+
+      allow create, update: if isAdmin() && isValidPromoOffer(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    function isValidPromoOffer(data) {
+      return data.keys().hasAll(['casinoId', 'promoCode', 'title', 'active']) &&
+             data.casinoId is string && data.casinoId.size() <= 128 &&
+             data.promoCode is string && data.promoCode.size() <= 128 &&
+             data.title is string && data.title.size() <= 256 &&
+             data.active is bool;
+    }
+
+    // =========================================================================
+    // 8. JACKPOT SCREENSHOTS COLLECTION RULES
+    // =========================================================================
+    match /jackpotScreenshots/{screenshotId} {
+      allow read: if true;
+
+      allow create: if isSignedIn() && 
+                    request.resource.data.uploadedBy == request.auth.uid &&
+                    request.resource.data.approved == false && // Must start unapproved
+                    isValidJackpotScreenshot(request.resource.data);
+
+      allow update: if isModerator(); // Only mods can approve/decline
+
+      allow delete: if isOwner(resource.data.uploadedBy) || isModerator();
+    }
+
+    function isValidJackpotScreenshot(data) {
+      return data.keys().hasAll(['casinoId', 'image', 'amount', 'approved', 'uploadedBy', 'uploadedAt']) &&
+             data.casinoId is string && data.casinoId.size() <= 128 &&
+             data.image is string && data.image.size() <= 2048 &&
+             (data.amount is int || data.amount is float) &&
+             data.approved is bool &&
+             data.uploadedBy is string && data.uploadedBy.size() <= 128;
+    }
+
+    // =========================================================================
+    // 9. SELL REQUESTS COLLECTION RULES
+    // =========================================================================
+    match /sellRequests/{requestId} {
+      allow read: if true;
+
+      allow create: if isValidSellRequest(request.resource.data, true) &&
+                    request.resource.data.status == 'pending'; // Force pending
+
+      allow update: if isAdmin() && isValidSellRequest(request.resource.data, false);
+      allow delete: if isAdmin();
+    }
+
+    function isValidSellRequest(data, isCreate) {
+      return (!isCreate || (
+        data.keys().hasAll(['name', 'email', 'casinoName', 'affiliateLink', 'amount', 'message', 'status']) &&
+        data.keys().size() >= 7
+      )) &&
+      (!('name' in data) || (data.name is string && data.name.size() <= 256)) &&
+      (!('email' in data) || (data.email is string && data.email.size() <= 256)) &&
+      (!('casinoName' in data) || (data.casinoName is string && data.casinoName.size() <= 256)) &&
+      (!('affiliateLink' in data) || (data.affiliateLink is string && data.affiliateLink.size() <= 2048)) &&
+      (!('screenshot' in data) || (data.screenshot is string && data.screenshot.size() <= 2048)) &&
+      (!('balanceScreenshot' in data) || (data.balanceScreenshot is string && data.balanceScreenshot.size() <= 2048)) &&
+      (!('bikashNumber' in data) || (data.bikashNumber is string && data.bikashNumber.size() <= 64)) &&
+      (!('dateTime' in data) || (data.dateTime is string && data.dateTime.size() <= 128)) &&
+      (!('userId' in data) || (data.userId is string && data.userId.size() <= 128)) &&
+      (!('amount' in data) || (data.amount is int || data.amount is float)) &&
+      (!('calculatedPrice' in data) || (data.calculatedPrice is int || data.calculatedPrice is float)) &&
+      (!('message' in data) || (data.message is string && data.message.size() <= 4096)) &&
+      (!('status' in data) || (data.status in ['pending', 'approved', 'rejected']));
+    }
+
+    // =========================================================================
+    // 10. AI HISTORY COLLECTION RULES (SYSTEM-ONLY WRITES)
+    // =========================================================================
+    match /aiHistory/{historyId} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin(); // Clients cannot write unless they are verified Admin backend triggers
+      allow delete: if isSuperAdmin();
+    }
+
+    // =========================================================================
+    // 11. SYSTEM NOTIFICATIONS COLLECTION RULES
+    // =========================================================================
+    match /notifications/{notificationId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // =========================================================================
+    // 12. GLOBAL SETTINGS COLLECTION RULES
+    // =========================================================================
+    match /settings/{settingsId} {
+      allow read: if true; // Public system settings (maintenance flag, default categories, etc)
+      allow create, update: if isAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    // =========================================================================
+    // 13. CLICKS COLLECTION RULES
+    // =========================================================================
+    match /clicks/{clickId} {
+      allow get: if isModerator();
+      allow list: if isModerator();
+
+      allow create: if isValidClick(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    function isValidClick(data) {
+      return data.keys().hasAll(['casinoId', 'casinoName', 'timestamp', 'anonymousVisitorId', 'deviceType', 'referrer', 'utmParams', 'serverTime']) &&
+             data.casinoId is string && data.casinoId.size() <= 128 &&
+             data.casinoName is string && data.casinoName.size() <= 256 &&
+             data.timestamp is string && data.timestamp.size() <= 64 &&
+             data.anonymousVisitorId is string && data.anonymousVisitorId.size() <= 128 &&
+             data.deviceType is string && data.deviceType.size() <= 64 &&
+             data.referrer is string && data.referrer.size() <= 2048;
+    }
+
+    // =========================================================================
+    // 14. PAGE VIEWS COLLECTION RULES
+    // =========================================================================
+    match /pageViews/{pageViewId} {
+      allow get: if isModerator();
+      allow list: if isModerator();
+
+      allow create: if isValidPageView(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    function isValidPageView(data) {
+      return data.keys().hasAll(['casinoId', 'timestamp', 'anonymousVisitorId']) &&
+             data.casinoId is string && data.casinoId.size() <= 128 &&
+             data.timestamp is string && data.timestamp.size() <= 64 &&
+             data.anonymousVisitorId is string && data.anonymousVisitorId.size() <= 128;
+    }
+
+    // =========================================================================
+    // 15. MEDIA ASSETS COLLECTION RULES
+    // =========================================================================
+    match /mediaAssets/{assetId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidMediaAsset(request.resource.data);
+      allow update, delete: if isAdmin();
+    }
+
+    function isValidMediaAsset(data) {
+      return data.keys().hasAll(['url', 'name', 'alt', 'folderType', 'uploadedAt', 'uploadedByEmail', 'uploadedByUid']) &&
+             data.url is string && data.url.size() <= 2048 &&
+             data.name is string && data.name.size() <= 1024 &&
+             data.alt is string && data.alt.size() <= 1024 &&
+             data.folderType is string && data.folderType.size() <= 128 &&
+             data.uploadedAt is string && data.uploadedAt.size() <= 64 &&
+             data.uploadedByEmail is string && data.uploadedByEmail.size() <= 256 &&
+             data.uploadedByUid is string && data.uploadedByUid.size() <= 128 &&
+             (!('fileSize' in data) || (data.fileSize is int && data.fileSize >= 0));
+    }
+
+    // =========================================================================
+    // 16. BLOGS COLLECTION RULES
+    // =========================================================================
+    match /blogs/{blogId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // 17. CONTACT INFO CONFIG RULES
+    // =========================================================================
+    match /contactInfo/{infoId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // 18. CONTACT MESSAGES RULES
+    // =========================================================================
+    match /contactMessages/{messageId} {
+      allow create: if isValidContactMessage(request.resource.data);
+      allow read, update, delete: if isModerator();
+    }
+
+    function isValidContactMessage(data) {
+      return data.keys().hasAll(['name', 'email', 'subject', 'message', 'createdAt', 'status']) &&
+             data.name is string && data.name.size() <= 256 &&
+             data.email is string && data.email.size() <= 256 &&
+             data.subject is string && data.subject.size() <= 512 &&
+             data.message is string && data.message.size() <= 4096 &&
+             data.status in ['unread', 'read'] &&
+             data.createdAt is string && data.createdAt.size() <= 64;
+    }
+
+    // =========================================================================
+    // 19. AI AGENT MANAGER COLLECTIONS
+    // =========================================================================
+    match /ai-agent-memories/{memoryId} {
+      allow read, write: if true;
+    }
+
+    match /ai-agent-knowledge/{knowledgeId} {
+      allow read, write: if true;
+    }
+
+    match /ai-agent-chats/{document=**} {
+      allow read, write: if true;
+    }
+
+    // =========================================================================
+    // 20. BANNERS COLLECTION RULES
+    // =========================================================================
+    match /banners/{bannerId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // 21. GAMES & MOST WINNING GAMES COLLECTION RULES
+    // =========================================================================
+    match /games/{gameId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /most_winning_games/{gameId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /themeConfigs/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // =========================================================================
+    // 22. WITHDRAWALS COLLECTION RULES
+    // =========================================================================
+    match /withdrawals/{withdrawalId} {
+      allow read: if true;
+
+      allow create: if isSignedIn() && 
+                    request.resource.data.userId == request.auth.uid && 
+                    request.resource.data.status == 'pending' &&
+                    isValidWithdrawal(request.resource.data);
+
+      allow update, delete: if isModerator() || isAdmin();
+    }
+
+    function isValidWithdrawal(data) {
+      return data.keys().hasAll(['userId', 'userEmail', 'userName', 'walletType', 'walletNumber', 'amount', 'status', 'createdAt']) &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.userEmail is string && data.userEmail.size() <= 256 &&
+             data.userName is string && data.userName.size() <= 256 &&
+             data.walletType is string && data.walletType.size() <= 64 &&
+             data.walletNumber is string && data.walletNumber.size() <= 64 &&
+             (!('walletAccountType' in data) || (data.walletAccountType is string && data.walletAccountType.size() <= 64)) &&
+             (data.amount is int || data.amount is float) && data.amount >= 100 &&
+             data.status in ['pending', 'approved', 'completed', 'rejected'] &&
+             data.createdAt is string && data.createdAt.size() <= 64;
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Affiliate Link Directory",
+  "description": "An elegant, comprehensive manager and public listing system for affiliate and referral links with beautiful custom cards, QR codes, and click analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

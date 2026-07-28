@@ -1,0 +1,1049 @@
+import React, { useState, useEffect } from "react";
+import { gsap } from "gsap";
+import { useTheme } from "../context/ThemeContext";
+import { auth, db } from "../firebase";
+import { collection, onSnapshot } from "firebase/firestore";
+import {
+  signInAnonymously,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  User,
+  GoogleAuthProvider,
+  signInWithPopup,
+} from "firebase/auth";
+import {
+  KeyRound,
+  LogOut,
+  UserCheck,
+  PlusCircle,
+  TrendingUp,
+  Sliders,
+  UserCog,
+  ChevronRight,
+  Info,
+  Sparkles,
+  Loader2,
+  CheckCircle,
+  ShieldCheck,
+  Settings as SettingsIcon,
+  Users as UsersIcon,
+  LayoutDashboard,
+  Building2,
+  Percent,
+  BookOpen,
+  Mail,
+  Image as ImageIcon,
+  Palette,
+  Wallet,
+  Menu,
+} from "lucide-react";
+import { AffiliateLink, UserProfile } from "../types";
+import AnalyticsSection from "./AnalyticsSection";
+
+// Import new modular foundation components
+import { AdminSidebar } from "./admin/AdminSidebar";
+import { AdminHeader } from "./admin/AdminHeader";
+import { DashboardStats } from "./admin/DashboardStats";
+import { Settings as AdminSettings } from "./admin/Settings";
+import { UserManager as AdminUserManager } from "./admin/UserManager";
+import { CasinoManager } from "./admin/CasinoManager";
+import { SellRequestsManager } from "./admin/SellRequestsManager";
+import { WithdrawalsManager } from "./admin/WithdrawalsManager";
+import { BonusManager } from "./admin/BonusManager";
+import { ModerationManager } from "./admin/ModerationManager";
+import { CasinoAnalytics } from "./admin/CasinoAnalytics";
+import { JackpotListing } from "./JackpotListing";
+import { ContentManager } from "./admin/ContentManager";
+import { BlogManager } from "./admin/BlogManager";
+import { ContactPageManager } from "./admin/ContactPageManager";
+import { ThemeEditor } from "./admin/ThemeEditor";
+import { AIAgentManager } from "./admin/AIAgentManager";
+import { AdminProfileManager } from "./admin/AdminProfileManager";
+
+interface AdminPanelProps {
+  deals: AffiliateLink[];
+  onAddDeal: (dealData: any) => Promise<void>;
+  onUpdateDeal: (dealId: string, updatedFields: any) => Promise<void>;
+  onDeleteDeal: (dealId: string) => Promise<void>;
+  currentUser: User | null;
+  userProfile: UserProfile | null;
+  onUpdateProfile: (profile: any) => Promise<void>;
+  onActiveTabTitleChange?: (title: string) => void;
+}
+
+export default function AdminPanel({
+  deals,
+  onAddDeal,
+  onUpdateDeal,
+  onDeleteDeal,
+  currentUser,
+  userProfile,
+  onUpdateProfile,
+  onActiveTabTitleChange,
+}: AdminPanelProps) {
+  const { theme } = useTheme();
+  // Navigation tabs: overview, casinos, sell-requests, links, analytics, profile, settings, users
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("tab") || "overview";
+  });
+  const [isSidebarOpenMobile, setIsSidebarOpenMobile] = useState<boolean>(false);
+  const [reviewSubTab, setReviewSubTab] = useState<"moderation" | "submit">("moderation");
+
+  // Sync tab from URL changes
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab");
+      if (tabParam && tabParam !== activeTab) {
+        setActiveTab(tabParam);
+      }
+    };
+    window.addEventListener("popstate", handleUrlChange);
+    // Also poll search params since React Router might not trigger standard popstate on search changes
+    const interval = setInterval(handleUrlChange, 500);
+    return () => {
+      window.removeEventListener("popstate", handleUrlChange);
+      clearInterval(interval);
+    };
+  }, [activeTab]);
+
+  // Handle mobile sidebar toggle event from parent header
+  useEffect(() => {
+    const handleToggle = () => {
+      setIsSidebarOpenMobile((prev) => !prev);
+    };
+    window.addEventListener("toggle-admin-sidebar", handleToggle);
+    return () => {
+      window.removeEventListener("toggle-admin-sidebar", handleToggle);
+    };
+  }, []);
+
+  // Update parent header title when tab changes
+  useEffect(() => {
+    if (onActiveTabTitleChange) {
+      onActiveTabTitleChange(getHeaderTitle());
+    }
+  }, [activeTab, onActiveTabTitleChange]);
+
+  // Real-time directory statistics state
+  const [stats, setStats] = useState({
+    total: 0,
+    published: 0,
+    drafts: 0,
+    aiGenerated: 0,
+    pendingReview: 0,
+    sellRequests: 0,
+    users: 0,
+  });
+
+  useEffect(() => {
+    const isUserAdmin = currentUser && userProfile && (userProfile.role === "admin" || userProfile.role === "super_admin");
+    const isUserModerator = currentUser && userProfile && (userProfile.role === "moderator" || userProfile.role === "admin" || userProfile.role === "super_admin");
+
+    if (!currentUser || !userProfile || !isUserModerator) {
+      return;
+    }
+
+    // Exclude soft-deleted records from stats
+    const unsubCasinos = onSnapshot(collection(db, "casinos"), (snap) => {
+      const docs = snap.docs.map((d) => d.data());
+      const activeDocs = docs.filter((d: any) => !d.isDeleted);
+      setStats((prev) => ({
+        ...prev,
+        total: activeDocs.length,
+        published: activeDocs.filter((d: any) => d.status === "published").length,
+        drafts: activeDocs.filter((d: any) => d.status === "draft").length,
+        aiGenerated: activeDocs.filter((d: any) => d.aiGenerated || d.status === "ai_generated").length,
+        pendingReview: activeDocs.filter((d: any) => d.status === "pending_review").length,
+      }));
+    }, (err) => {
+      console.warn("Stats listener casinos error: ", err);
+    });
+
+    let unsubSell = () => {};
+    if (isUserModerator) {
+      unsubSell = onSnapshot(collection(db, "sellRequests"), (snap) => {
+        setStats((prev) => ({ ...prev, sellRequests: snap.size }));
+      }, (err) => {
+        console.warn("Stats listener sellRequests error: ", err);
+      });
+    }
+
+    let unsubUsers = () => {};
+    if (isUserAdmin) {
+      unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
+        setStats((prev) => ({ ...prev, users: snap.size }));
+      }, (err) => {
+        console.warn("Stats listener users error: ", err);
+      });
+    }
+
+    return () => {
+      unsubCasinos();
+      unsubSell();
+      unsubUsers();
+    };
+  }, [currentUser, userProfile]);
+
+  // Auth form state
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [unauthorizedDomain, setUnauthorizedDomain] = useState<string | null>(null);
+
+  // Link Form state
+  const [editingDeal, setEditingDeal] = useState<AffiliateLink | null>(null);
+  const [formData, setFormData] = useState({
+    title: "",
+    originalUrl: "",
+    description: "",
+    category: "SaaS",
+    customCategory: "",
+    discountCode: "",
+    rewardText: "",
+    ownerRewardText: "",
+    slug: "",
+  });
+  const [formLoading, setFormLoading] = useState(false);
+  const [formSuccess, setFormSuccess] = useState("");
+  const [formError, setFormError] = useState("");
+
+  // Profile Form state
+  const [profileName, setProfileName] = useState("");
+  const [profileBio, setProfileBio] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileSuccess, setProfileSuccess] = useState(false);
+
+  // Synced profile inputs
+  useEffect(() => {
+    if (userProfile) {
+      setProfileName(userProfile.displayName || "");
+      setProfileBio(userProfile.bio || "");
+    }
+  }, [userProfile]);
+
+  // Auth Operations
+  const handleGoogleSignIn = async () => {
+    setAuthLoading(true);
+    setAuthError("");
+    setUnauthorizedDomain(null);
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      await signInWithPopup(auth, provider);
+    } catch (err: any) {
+      console.error("Google login failed:", err);
+      let msg = err?.message || "Failed to authenticate with Google";
+      if (err?.code === "auth/popup-closed-by-user") {
+        msg = "The sign-in popup was closed. Please try again.";
+      } else if (err?.code === "auth/unauthorized-domain" || String(err).includes("unauthorized-domain")) {
+        setUnauthorizedDomain(window.location.hostname);
+        msg = "This web domain is not yet authorized in your Firebase authentication console.";
+      }
+      setAuthError(msg);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleAnonymousQuickstart = async () => {
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      await signInAnonymously(auth);
+    } catch (err: any) {
+      setAuthError(err?.message || "Failed to initiate workspace session");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleAutofillAdmin = () => {
+    setAuthEmail("admin@refdirect.com");
+    setAuthPassword("admin123");
+    setIsRegistering(true);
+  };
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authEmail || !authPassword) {
+      setAuthError("Please fill in email and password fields");
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      if (isRegistering) {
+        await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+      } else {
+        await signInWithEmailAndPassword(auth, authEmail, authPassword);
+      }
+    } catch (err: any) {
+      let msg = err?.message || "Authentication error";
+      if (msg.includes("auth/invalid-credential")) {
+        msg = "Invalid email or master password. Try registering instead!";
+      }
+      setAuthError(msg);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Link Add/Edit action
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError("");
+    setFormSuccess("");
+
+    if (!formData.title || !formData.originalUrl) {
+      setFormError("Platform Name and Referral Target Link are required");
+      return;
+    }
+
+    let targetUrl = formData.originalUrl;
+    if (!/^https?:\/\//i.test(targetUrl)) {
+      targetUrl = "https://" + targetUrl;
+    }
+
+    const finalCategory = formData.category === "Custom" ? formData.customCategory.trim() : formData.category;
+    if (!finalCategory) {
+      setFormError("Please enter or specify a category for this link");
+      return;
+    }
+
+    setFormLoading(true);
+    try {
+      const dataPayload = {
+        title: formData.title.trim(),
+        originalUrl: targetUrl.trim(),
+        description: formData.description.trim(),
+        category: finalCategory,
+        discountCode: formData.discountCode.trim(),
+        rewardText: formData.rewardText.trim(),
+        ownerRewardText: formData.ownerRewardText.trim(),
+        slug: formData.slug.trim().toLowerCase().replace(/[^a-z0-9-_]/g, ""),
+      };
+
+      if (editingDeal) {
+        await onUpdateDeal(editingDeal.id, dataPayload);
+        setFormSuccess(`Successfully modified tracking deal "${formData.title}"!`);
+        setEditingDeal(null);
+      } else {
+        await onAddDeal(dataPayload);
+        setFormSuccess(`Successfully created referral link for "${formData.title}"!`);
+      }
+
+      setFormData({
+        title: "",
+        originalUrl: "",
+        description: "",
+        category: "SaaS",
+        customCategory: "",
+        discountCode: "",
+        rewardText: "",
+        ownerRewardText: "",
+        slug: "",
+      });
+    } catch (err: any) {
+      setFormError(err?.message || "Failed to process form. Try checking rule validation.");
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  // Profile Save
+  const handleProfileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profileName) return;
+    setProfileSaving(true);
+    setProfileSuccess(false);
+    try {
+      await onUpdateProfile({
+        displayName: profileName,
+        bio: profileBio,
+      });
+      setProfileSuccess(true);
+      setTimeout(() => setProfileSuccess(false), 3000);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const handleEditInit = (deal: AffiliateLink) => {
+    setEditingDeal(deal);
+    const standardCategories = ["SaaS", "Shopping", "Finance", "Tech", "Hosting", "Travel"];
+    const isCustom = !standardCategories.includes(deal.category);
+
+    setFormData({
+      title: deal.title,
+      originalUrl: deal.originalUrl,
+      description: deal.description || "",
+      category: isCustom ? "Custom" : deal.category,
+      customCategory: isCustom ? deal.category : "",
+      discountCode: deal.discountCode || "",
+      rewardText: deal.rewardText || "",
+      ownerRewardText: deal.ownerRewardText || "",
+      slug: deal.slug || "",
+    });
+    document.getElementById("link-form-container")?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingDeal(null);
+    setFormData({
+      title: "",
+      originalUrl: "",
+      description: "",
+      category: "SaaS",
+      customCategory: "",
+      discountCode: "",
+      rewardText: "",
+      ownerRewardText: "",
+      slug: "",
+    });
+  };
+
+  // GSAP Entrance Animations for Login screen
+  useEffect(() => {
+    if (!currentUser) {
+      const ctx = gsap.context(() => {
+        gsap.fromTo("#login-card", 
+          { y: 55, opacity: 0 }, 
+          { y: 0, opacity: 1, duration: 0.85, ease: "power3.out" }
+        );
+        gsap.fromTo("#login-logo-container", 
+          { scale: 0.75, rotate: -15, opacity: 0 }, 
+          { scale: 1, rotate: 0, opacity: 1, duration: 0.65, delay: 0.15, ease: "back.out(1.5)" }
+        );
+        gsap.fromTo("#login-title, #login-subtitle", 
+          { y: 15, opacity: 0 }, 
+          { y: 0, opacity: 1, duration: 0.5, delay: 0.3, stagger: 0.1, ease: "power2.out" }
+        );
+        gsap.fromTo("#google-signin-btn", 
+          { y: 15, opacity: 0 }, 
+          { y: 0, opacity: 1, duration: 0.5, delay: 0.5, ease: "power2.out" }
+        );
+        gsap.fromTo("#login-alternative-details", 
+          { y: 15, opacity: 0 }, 
+          { y: 0, opacity: 1, duration: 0.5, delay: 0.65, ease: "power2.out" }
+        );
+      });
+      return () => ctx.revert();
+    }
+  }, [currentUser]);
+
+  // GUEST LOGIN SCREEN
+  if (!currentUser) {
+    const logoUrl = theme?.globalSettings?.logoUrl;
+    const logoText = theme?.globalSettings?.logoText || "RefDirect";
+
+    return (
+      <div 
+        id="login-card"
+        className="w-full max-w-md mx-auto my-12 rounded-3xl border border-slate-800 bg-slate-950 p-6 sm:p-10 shadow-2xl relative overflow-hidden text-slate-100 opacity-0"
+      >
+        {/* Glow ambient background lights */}
+        <div className="absolute right-0 top-0 -mr-12 -mt-12 h-40 w-40 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
+        <div className="absolute left-0 bottom-0 -ml-12 -mb-12 h-40 w-40 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
+
+        {/* Visual Authentication Loading Overlay (Guides the user through the login process) */}
+        {authLoading && (
+          <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex flex-col items-center justify-center p-6 text-center animate-fade-in">
+            <div className="relative w-20 h-20 flex items-center justify-center mb-5">
+              <div className="absolute inset-0 rounded-full border-2 border-slate-800 border-t-amber-500 animate-spin" />
+              <div className="absolute inset-2 bg-slate-900 rounded-full flex items-center justify-center p-2 border border-amber-500/10">
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt={logoText}
+                    className="max-h-full max-w-full object-contain animate-pulse"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <KeyRound className="h-6 w-6 text-amber-500 animate-pulse" />
+                )}
+              </div>
+            </div>
+            
+            <div className="space-y-2.5 max-w-xs">
+              <h4 className="font-display font-black text-white text-sm uppercase tracking-wider">
+                নিরাপত্তা যাচাই করা হচ্ছে...
+              </h4>
+              <p className="text-xs text-slate-400 font-semibold leading-relaxed">
+                আপনার ব্রাউজার সেশন ও ক্রেডেনশিয়াল প্রমাণীকরণ করা হচ্ছে। অনুগ্রহ করে কিছু মুহূর্ত অপেক্ষা করুন।
+              </p>
+              
+              {/* Stepper visual animation list to keep user informed */}
+              <div className="pt-4 border-t border-slate-900/80 space-y-2 text-left w-full text-[10px] font-mono text-slate-500">
+                <div className="flex items-center gap-2 text-amber-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+                  <span>[STAGE 1] VALIDATING CRYPTO GATEWAY...</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-800" />
+                  <span>[STAGE 2] FETCHING VISUAL PRESETS...</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-800" />
+                  <span>[STAGE 3] LAUNCHING ADMIN COMMAND...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="text-center mb-8">
+          <div 
+            id="login-logo-container"
+            className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-900/80 text-amber-500 mb-4 shadow-xl border border-slate-800/80 p-3 overflow-hidden"
+          >
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt={logoText}
+                className="max-h-full max-w-full object-contain"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <KeyRound className="h-6 w-6 animate-pulse" />
+            )}
+          </div>
+          <h2 id="login-title" className="font-display font-black text-2xl text-white tracking-tight">
+            {logoText} Creator Security Gate
+          </h2>
+          <p id="login-subtitle" className="text-xs text-slate-400 mt-2 max-w-xs mx-auto leading-relaxed font-semibold">
+            আপনার পার্সোনাল ডিরেক্টরি পেজ তৈরি করুন, রেফারেল বোনাস কাস্টমাইজ করুন এবং পারফরম্যান্স গ্রাফ পর্যবেক্ষণ করুন!
+          </p>
+        </div>
+
+        {authError && (
+          <div className="rounded-2xl bg-red-950/40 border border-red-900/50 p-4 mb-6 text-xs text-red-200 leading-normal space-y-3 shadow-md">
+            <div className="flex items-start gap-2.5">
+              <span className="h-5 w-5 rounded-full bg-red-900/60 text-red-200 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">!</span>
+              <div>
+                <p className="font-bold text-red-100">Sign-in Security Notice</p>
+                <p className="mt-0.5 text-red-300/95">{authError}</p>
+              </div>
+            </div>
+
+            {unauthorizedDomain && (
+              <div className="pt-2.5 border-t border-red-900/30 space-y-2.5 text-red-300">
+                <p className="font-semibold text-red-100 text-[11px] uppercase tracking-wider">How to resolve this:</p>
+                <ol className="list-decimal list-inside space-y-1.5 pl-0.5 leading-relaxed text-red-300/80">
+                  <li>Go to your <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="text-amber-400 font-bold underline hover:text-amber-300">Firebase Console</a></li>
+                  <li>Go to <strong>Authentication</strong> &rarr; <strong>Settings</strong> tab</li>
+                  <li>Scroll to <strong>Authorized domains</strong> list</li>
+                  <li>Click <strong>Add domain</strong> and insert this exact address:</li>
+                </ol>
+                <div className="flex items-center gap-2 bg-slate-900/80 p-2 rounded-lg border border-red-900/50 font-mono text-[10px] text-amber-300 select-all font-semibold">
+                  <span className="flex-1 truncate">{unauthorizedDomain}</span>
+                  <button 
+                    onClick={() => navigator.clipboard.writeText(unauthorizedDomain)}
+                    className="px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md text-[9px] uppercase font-bold tracking-wider text-slate-300 cursor-pointer active:scale-95 transition-all"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="space-y-5">
+          <button
+            id="google-signin-btn"
+            onClick={handleGoogleSignIn}
+            disabled={authLoading}
+            className="w-full h-12 rounded-xl bg-white hover:bg-slate-100 text-slate-950 font-bold text-xs flex items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all cursor-pointer active:scale-98"
+          >
+            <svg className="h-4.5 w-4.5 shrink-0" viewBox="0 0 24 24">
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.85z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.85c.87-2.6 3.3-4.53 6.16-4.53z"
+              />
+            </svg>
+            <span>Continue with Google</span>
+          </button>
+
+          <details 
+            id="login-alternative-details"
+            className="group border border-slate-800 rounded-2xl bg-slate-900/30 p-1 transition-all"
+          >
+            <summary className="list-none flex items-center justify-between p-3.5 text-xs font-bold text-slate-400 hover:text-slate-200 cursor-pointer select-none">
+              <span>Alternative developer methods</span>
+              <span className="transition-transform duration-200 group-open:rotate-180 text-slate-500">
+                ▼
+              </span>
+            </summary>
+
+            <div className="p-4 border-t border-slate-900 space-y-4 bg-slate-950 rounded-xl mt-1">
+              <button
+                id="quickstart-anonymous-btn"
+                onClick={handleAnonymousQuickstart}
+                disabled={authLoading}
+                className="w-full h-11 rounded-xl bg-indigo-650 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm hover:shadow-md transition-all cursor-pointer active:scale-98"
+              >
+                <span>Instant Sandbox Quickstart</span>
+                <ChevronRight className="h-4 w-4" />
+              </button>
+
+              <div className="rounded-2xl bg-amber-950/20 border border-amber-900/30 p-4 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
+                  <Sparkles className="h-4 w-4 text-amber-500 shrink-0 animate-pulse" />
+                  <span>Admin Credentials Guide</span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-normal">
+                  Register your admin account on your new custom Firebase database! Click <strong className="font-bold text-amber-400">Auto-fill</strong>, keep <strong className="font-bold text-amber-400">Register Credentials</strong> toggled, then click <strong className="font-bold text-amber-400">Create Owner Space</strong>.
+                </p>
+                <div className="p-3 rounded-lg bg-slate-900 border border-slate-800/80 font-mono text-[10px] text-slate-300 space-y-1 relative shadow-xs">
+                  <div><span className="font-semibold text-slate-500">EMAIL:</span> admin@refdirect.com</div>
+                  <div><span className="font-semibold text-slate-400">PASSWORD:</span> admin123</div>
+                  <button
+                    type="button"
+                    onClick={handleAutofillAdmin}
+                    className="absolute right-2 top-2 px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[9px] font-extrabold rounded-md cursor-pointer transition-all uppercase"
+                  >
+                    Auto-fill
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative py-2 text-center text-[10px] uppercase font-bold tracking-wider text-slate-600">
+                <span className="bg-slate-950 px-3 relative z-10">Or custom cloud credentials</span>
+                <hr className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-slate-900 z-0" />
+              </div>
+
+              <form onSubmit={handleEmailAuth} className="space-y-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    Owner Email address
+                  </label>
+                  <input
+                    id="email-field"
+                    type="email"
+                    placeholder="you@domain.com"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-slate-800 rounded-xl text-xs font-medium focus:border-indigo-500 focus:outline-hidden bg-slate-900/60 text-slate-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    Personal master passcode
+                  </label>
+                  <input
+                    id="password-field"
+                    type="password"
+                    placeholder="Secret key"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-slate-800 rounded-xl text-xs font-medium focus:border-indigo-500 focus:outline-hidden bg-slate-900/60 text-slate-100"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    id="toggle-auth-mode-btn"
+                    type="button"
+                    onClick={() => setIsRegistering(!isRegistering)}
+                    className="text-[11px] font-bold text-slate-400 hover:text-white underline cursor-pointer"
+                  >
+                    {isRegistering ? "Back to Login" : "Register Credentials"}
+                  </button>
+                  <button
+                    id="submit-auth-btn"
+                    type="submit"
+                    disabled={authLoading}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md hover:shadow-lg transition-all cursor-pointer"
+                  >
+                    {isRegistering ? "Create Owner Space" : "Sign In"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </details>
+        </div>
+      </div>
+    );
+  }
+
+  // Active metrics calculation
+  const totalClicks = deals.reduce((sum, item) => sum + (item.clicks || 0), 0);
+  const totalConversions = deals.reduce((sum, item) => sum + (item.conversions || 0), 0);
+  const activeLinks = deals.filter(item => item.status === 'active' || !item.isArchived).length;
+
+  const getHeaderTitle = () => {
+    if (activeTab.startsWith('theme-editor')) {
+      return 'Theme & Visual Editor';
+    }
+    switch (activeTab) {
+      case 'overview': return 'Command Center Dashboard';
+      case 'ai-agent': return 'Personal AI Assistant & Lead Strategist';
+      case 'creator': return 'Creator Hub Launcher';
+      case 'casinos': return 'Casino Listings Asset Manager';
+      case 'bonuses': return 'Promo Campaign & Bonuses Manager';
+      case 'review-submission': return 'Review Submission';
+      case 'casino-analytics': return 'Casino Conversion Analytics';
+      case 'sell-requests': return 'Affiliate Sell Requests';
+      case 'withdrawals': return 'Withdrawal Requests (উইথড্রয়াল ম্যানেজার)';
+      case 'banners': return 'Content & Media Library Manager';
+      case 'theme-editor': return 'Theme & Visual Editor';
+      case 'blogs': return 'Dynamic Blog & Article Manager';
+      case 'contact-desk': return 'Contact Page & Inbox Desk';
+      case 'analytics': return 'Performance & Analytics';
+      case 'profile': return 'Admin Profile & Account Settings';
+      case 'settings': return 'System Settings';
+      case 'users': return 'System Users';
+      default: return 'Administrator Space';
+    }
+  };
+
+  // FULL COMPREHENSIVE FOUNDATION LAYOUT (Task 11)
+  return (
+    <div className="flex h-full w-full overflow-hidden bg-slate-50 font-sans">
+      {/* Sidebar Layout */}
+      <AdminSidebar
+        currentTab={activeTab}
+        onTabChange={(tab) => {
+          setActiveTab(tab);
+          const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + "?tab=" + tab;
+          window.history.pushState({ path: newUrl }, "", newUrl);
+          // Auto reset forms
+          handleCancelEdit();
+          setIsSidebarOpenMobile(false);
+        }}
+        onLogout={handleSignOut}
+        isOpenMobile={isSidebarOpenMobile}
+        onCloseMobile={() => setIsSidebarOpenMobile(false)}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Scrollable Panel Area */}
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 space-y-6">
+          {/* Quick Statistics (Task 11 Component integration - only on old links/analytics views) */}
+          {activeTab === "analytics" && (
+            <DashboardStats
+              totalLinks={deals.length}
+              activeLinks={activeLinks}
+              totalClicks={totalClicks}
+              totalConversions={totalConversions}
+            />
+          )}
+
+          {/* Active Tab Panel routing */}
+          {activeTab === "overview" && (
+            <div className="space-y-6">
+              {/* Dynamic Admin Greeting Card */}
+              <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-linear-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 md:p-8 text-white shadow-xs">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_var(--tw-gradient-stops))] from-indigo-500/10 via-transparent to-transparent" />
+                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <h2 className="font-display font-black text-2xl tracking-tight">
+                      Command Dashboard
+                    </h2>
+                    <p className="text-xs text-indigo-200 font-medium">
+                      Welcome back, <span className="font-bold text-white">{currentUser?.email}</span>. You have <span className="font-bold text-white">{stats.pendingReview} pending reviews</span> and <span className="font-bold text-white">{stats.sellRequests} acquisition bids</span> awaiting processing.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setActiveTab("casinos")}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>Manage Listings</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("sell-requests")}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/15 border border-white/10 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>Incoming Requests</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bento Stats Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
+                <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-xs">
+                  <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase">Total Listings</span>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-extrabold text-slate-800">{stats.total}</span>
+                    <span className="text-[10px] text-slate-400">items</span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-xs">
+                  <span className="text-[10px] font-bold text-emerald-600 tracking-wider uppercase">Published</span>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-extrabold text-emerald-700">{stats.published}</span>
+                    <span className="text-[10px] text-emerald-500 font-semibold">
+                      {stats.total > 0 ? `${Math.round((stats.published / stats.total) * 100)}%` : "0%"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-xs">
+                  <span className="text-[10px] font-bold text-amber-600 tracking-wider uppercase">Drafts</span>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-extrabold text-amber-700">{stats.drafts}</span>
+                    <span className="text-[10px] text-amber-500">pending</span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-xs">
+                  <span className="text-[10px] font-bold text-indigo-600 tracking-wider uppercase">AI Generated</span>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-extrabold text-indigo-700">{stats.aiGenerated}</span>
+                    <span className="text-[10px] text-indigo-500 font-semibold">Gemini</span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-xs">
+                  <span className="text-[10px] font-bold text-rose-600 tracking-wider uppercase">Pending Review</span>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-extrabold text-rose-700">{stats.pendingReview}</span>
+                    <span className="text-[10px] text-rose-400">reviews</span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-xs">
+                  <span className="text-[10px] font-bold text-cyan-600 tracking-wider uppercase">Sell Requests</span>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-extrabold text-cyan-700">{stats.sellRequests}</span>
+                    <span className="text-[10px] text-cyan-500 font-semibold">bids</span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-xs">
+                  <span className="text-[10px] font-bold text-slate-500 tracking-wider uppercase">Total Users</span>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-2xl font-extrabold text-slate-700">{stats.users}</span>
+                    <span className="text-[10px] text-slate-400">Profiles</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Feature Modules Quick Link Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                <div
+                  onClick={() => setActiveTab("casinos")}
+                  className="bg-white border border-slate-200 rounded-3xl p-6 hover:border-indigo-300 shadow-xs cursor-pointer transition-all duration-200 group flex items-start justify-between"
+                >
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-extrabold text-indigo-600 tracking-widest uppercase">Affiliate Asset Hub</span>
+                    <h4 className="font-display font-black text-slate-900 text-sm">Casino Listing Directory</h4>
+                    <p className="text-xs text-slate-500 leading-normal max-w-sm font-semibold">
+                      Publish, archive, and edit dynamic web resources. Generate optimized copy using our integrated Gemini AI crawler.
+                    </p>
+                  </div>
+                  <div className="p-2.5 rounded-full bg-slate-50 group-hover:bg-indigo-50 text-slate-400 group-hover:text-indigo-600 transition shrink-0">
+                    <ChevronRight className="w-5 h-5" />
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setActiveTab("sell-requests")}
+                  className="bg-white border border-slate-200 rounded-3xl p-6 hover:border-emerald-300 shadow-xs cursor-pointer transition-all duration-200 group flex items-start justify-between"
+                >
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-extrabold text-emerald-600 tracking-widest uppercase">Capital & Acquisitions</span>
+                    <h4 className="font-display font-black text-slate-900 text-sm">Review Sell Requests</h4>
+                    <p className="text-xs text-slate-500 leading-normal max-w-sm font-semibold">
+                      Process acquisition offers submitted by registered partners. Screen proof attachments and coordinate handovers.
+                    </p>
+                  </div>
+                  <div className="p-2.5 rounded-full bg-slate-50 group-hover:bg-emerald-50 text-slate-400 group-hover:text-emerald-600 transition shrink-0">
+                    <ChevronRight className="w-5 h-5" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Merged Casino Analytics Section */}
+              <div className="pt-4 border-t border-slate-200">
+                <div className="mb-4">
+                  <h3 className="font-display font-black text-slate-900 text-lg tracking-tight">
+                    Casino Conversion Analytics
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Analyze user impressions, dynamic click counts, and affiliate traffic click-through rates.
+                  </p>
+                </div>
+                <CasinoAnalytics />
+              </div>
+            </div>
+          )}
+
+          {activeTab === "creator" && (
+            <div className="space-y-6">
+              {/* Creator Portal - Sidebar Pages Launchpad Grid (Bengali-Friendly) */}
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <div className="h-6 w-1 bg-indigo-600 rounded-full animate-pulse" />
+                      <h3 className="font-display font-black text-slate-900 text-lg tracking-tight">
+                        Creator Portal Hub (Quick Launchpad)
+                      </h3>
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium">
+                      আপনার সবগুলো এডমিন ও ক্রিয়েটর পেইজের এক্সেস এবং কন্ট্রোল প্যানেল এখানে গ্রিড আকারে সাজানো রয়েছে।
+                    </p>
+                  </div>
+                  <span className="self-start sm:self-center text-[10px] uppercase font-black tracking-wider text-indigo-700 bg-indigo-50 border border-indigo-100/80 px-2.5 py-1 rounded-md shrink-0">
+                    11 Modules Connected
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+                  {[
+                    { id: 'overview', label: 'Command Overview', icon: LayoutDashboard, color: 'text-indigo-600 bg-indigo-50 border-indigo-100/50 hover:bg-indigo-50/20' },
+                    { id: 'ai-agent', label: 'AI Agent Manager', icon: Sparkles, color: 'text-pink-650 bg-pink-50 border-pink-100/50 hover:bg-pink-50/20' },
+                    { id: 'casinos', label: 'Casino Listings', icon: Building2, color: 'text-emerald-600 bg-emerald-50 border-emerald-100/50 hover:bg-emerald-50/20' },
+                    { id: 'bonuses', label: 'Campaign Bonuses', icon: Percent, color: 'text-amber-600 bg-amber-50 border-amber-100/50 hover:bg-amber-50/20' },
+                    { id: 'review-submission', label: 'Review Submission', icon: ShieldCheck, color: 'text-rose-600 bg-rose-50 border-rose-100/50 hover:bg-rose-50/20' },
+                    { id: 'sell-requests', label: 'Sell Requests', icon: TrendingUp, color: 'text-cyan-600 bg-cyan-50 border-cyan-100/50 hover:bg-cyan-50/20' },
+                    { id: 'withdrawals', label: 'Withdrawal Requests', icon: Wallet, color: 'text-emerald-600 bg-emerald-50 border-emerald-100/50 hover:bg-emerald-50/20' },
+                    { id: 'blogs', label: 'Manage Blogs', icon: BookOpen, color: 'text-blue-600 bg-blue-50 border-blue-100/50 hover:bg-blue-50/20' },
+                    { id: 'contact-desk', label: 'Contact Inbox', icon: Mail, color: 'text-violet-600 bg-violet-50 border-violet-100/50 hover:bg-violet-50/20' },
+                    { id: 'banners', label: 'Content Manager', icon: ImageIcon, color: 'text-purple-600 bg-purple-50 border-purple-100/50 hover:bg-purple-50/20' },
+                    { id: 'theme-editor', label: 'Theme Editor', icon: Palette, color: 'text-fuchsia-600 bg-fuchsia-50 border-fuchsia-100/50 hover:bg-fuchsia-50/20' },
+                    { id: 'settings', label: 'Settings', icon: SettingsIcon, color: 'text-slate-600 bg-slate-50 border-slate-100/50 hover:bg-slate-50/20' },
+                    { id: 'users', label: 'User Manager', icon: UsersIcon, color: 'text-teal-600 bg-teal-50 border-teal-100/50 hover:bg-teal-50/20' },
+                  ].map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => {
+                          setActiveTab(item.id);
+                          const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + "?tab=" + item.id;
+                          window.history.pushState({ path: newUrl }, "", newUrl);
+                        }}
+                        className="group relative overflow-hidden bg-white border border-slate-200/70 p-4 rounded-2xl cursor-pointer hover:shadow-md hover:border-indigo-400/80 hover:-translate-y-0.5 transition-all duration-300 flex flex-col items-center text-center justify-center min-h-[120px]"
+                      >
+                        <div className={`inline-flex items-center justify-center p-3.5 rounded-xl border ${item.color} transition-all duration-300 group-hover:scale-110 shadow-xs mb-3`}>
+                          <Icon className="w-5 h-5" />
+                        </div>
+                        <h4 className="font-display font-bold text-slate-800 text-xs sm:text-sm tracking-tight group-hover:text-indigo-600 transition-colors">
+                          {item.label}
+                        </h4>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "ai-agent" && <AIAgentManager />}
+
+          {activeTab === "casinos" && <CasinoManager />}
+
+          {activeTab === "bonuses" && <BonusManager />}
+
+          {activeTab === "review-submission" && (
+            <div className="space-y-6">
+              {/* Inner Sub-Tabs Navigation for Review Submission */}
+              <div className="flex bg-white/80 p-1.5 rounded-2xl border border-slate-200 max-w-md shadow-xs">
+                <button
+                  onClick={() => setReviewSubTab("moderation")}
+                  className={`flex-1 px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    reviewSubTab === "moderation"
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  <span>Vetting Desk & Moderation</span>
+                </button>
+                <button
+                  onClick={() => setReviewSubTab("submit")}
+                  className={`flex-1 px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    reviewSubTab === "submit"
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  <Sparkles className="h-4 w-4" />
+                  <span>Submit Jackpot Proof</span>
+                </button>
+              </div>
+
+              {/* Component Views */}
+              {reviewSubTab === "moderation" ? (
+                <ModerationManager />
+              ) : (
+                <JackpotListing isAdmin={true} />
+              )}
+            </div>
+          )}
+
+          {activeTab === "sell-requests" && <SellRequestsManager />}
+
+          {activeTab === "withdrawals" && <WithdrawalsManager />}
+
+          {activeTab === "banners" && <ContentManager />}
+
+          {activeTab.startsWith("theme-editor") && (
+            <ThemeEditor
+              activeSubTab={activeTab}
+              onSubTabChange={(tab) => {
+                setActiveTab(tab);
+                const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + "?tab=" + tab;
+                window.history.pushState({ path: newUrl }, "", newUrl);
+              }}
+            />
+          )}
+
+          {activeTab === "blogs" && <BlogManager deals={deals} />}
+
+          {activeTab === "contact-desk" && <ContactPageManager />}
+
+          {activeTab === "analytics" && <AnalyticsSection deals={deals} />}
+
+          {activeTab === "profile" && (
+            <AdminProfileManager
+              currentUser={currentUser}
+              userProfile={userProfile}
+              onUpdateProfile={onUpdateProfile}
+            />
+          )}
+
+          {activeTab === "settings" && <AdminSettings />}
+
+          {activeTab === "users" && <AdminUserManager />}
+        </main>
+      </div>
+    </div>
+  );
+}
