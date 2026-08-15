@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover" />
+    <title>Eker | Verified Online Casino Broker & Jackpots</title>
+    
+    <!-- Mobile & PWA Meta Tags -->
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="application-name" content="Eker Listings" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Eker Listings" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="msapplication-TileColor" content="#4f46e5" />
+    <meta name="msapplication-TileImage" content="/tk10_logo.jpg" />
+
+    <!-- Web App Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- Favicon & Touch Icons with logos -->
+    <link rel="icon" type="image/jpeg" href="/tk10_logo.jpg" />
+    <link rel="shortcut icon" href="/tk10_logo.jpg" />
+    <link rel="apple-touch-icon" href="/tk10_logo.jpg" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/tk10_logo.jpg" />
+    <link rel="apple-touch-icon" sizes="512x512" href="/tk10_logo.jpg" />
+
+    <!-- Open Graph & Social Sharing -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Eker Online Casino Listing & Jackpots" />
+    <meta property="og:description" content="Verified Casino Broker & Jackpots Directory with real-time deals and instant jackpot screenshot cash rewards." />
+    <meta property="og:image" content="/tk10_logo.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="/tk10_logo.jpg" />
+  </head>
+  <body class="bg-slate-900 text-slate-100 antialiased selection:bg-indigo-500 selection:text-white">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for (let registration of registrations) {
+            registration.unregister();
+          }
+        });
+      }
+    </script>
+  </body>
+</html>
+

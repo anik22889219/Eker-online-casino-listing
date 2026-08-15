@@ -1,0 +1,62 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Dynamic role check (looks up from Firestore)
+    function getUserRole() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && 
+             (getUserRole() == 'admin' || getUserRole() == 'super_admin');
+    }
+
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    function isLessSize(mb) {
+      return request.resource.size < mb * 1024 * 1024;
+    }
+
+    // 1. Logos Folder: Store casino brand logos
+    match /logos/{allPaths=**} {
+      allow read: if true; // Publicly accessible brand logos
+      allow write: if isAdmin() && isImage() && isLessSize(2); // Only admin can upload, <= 2MB
+    }
+
+    // 2. Banners Folder: Store casino promo headers
+    match /banners/{allPaths=**} {
+      allow read: if true; // Publicly accessible promotional banners
+      allow write: if isAdmin() && isImage() && isLessSize(5); // Only admin, <= 5MB
+    }
+
+    // 3. Jackpots Folder: User-submitted jackpot win proof images
+    match /jackpots/{allPaths=**} {
+      allow read: if true; // Approved jackpots are public
+      allow write: if isSignedIn() && isImage() && isLessSize(5); // Standard users, <= 5MB
+    }
+
+    // 4. Screenshots Folder: User-submitted screenshots for sell requests / reviews
+    match /screenshots/{allPaths=**} {
+      allow read: if isSignedIn(); // Registered users can view uploaded support images
+      allow write: if isSignedIn() && isImage() && isLessSize(5); // Standard users, <= 5MB
+    }
+
+    // 5. Avatars Folder: User profile photos
+    match /avatars/{userId}/{fileName} {
+      allow read: if true; // Avatars are public
+      allow write: if isOwner(userId) && isImage() && isLessSize(2); // Only the user themselves, <= 2MB
+    }
+  }
+}

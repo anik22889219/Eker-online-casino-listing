@@ -1,0 +1,54 @@
+{
+  "name": "Eker Online Casino Listing & Jackpots",
+  "short_name": "Eker Listings",
+  "description": "Verified Casino Broker & Jackpots Directory with real-time deal listings and jackpot screenshot rewards.",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f172a",
+  "theme_color": "#4f46e5",
+  "categories": ["entertainment", "finance", "games", "utilities"],
+  "icons": [
+    {
+      "src": "/tk10_logo.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "/tk10_logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/qq777_logo.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "/qq777_logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "View Casinos",
+      "short_name": "Casinos",
+      "description": "Browse all verified online casinos and bonuses",
+      "url": "/#casinos",
+      "icons": [{ "src": "/tk10_logo.jpg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Sell Jackpot Screenshot",
+      "short_name": "Sell Jackpot",
+      "description": "Submit your jackpot win screenshot for cash reward",
+      "url": "/jackpot-listing",
+      "icons": [{ "src": "/tk10_logo.jpg", "sizes": "192x192" }]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Eker Online Casino Listing",
+  "description": "Verified Casino Broker & Jackpots Directory with real-time deal listings, jackpot screenshot rewards, and automated workflow administration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
